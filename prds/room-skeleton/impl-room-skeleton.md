@@ -62,7 +62,7 @@
   - 6.6 Невалидные payload (`{}`, `name: "<b>"`, `roomId: "../x"`, лишние поля) → `INVALID_*`; `ALREADY_JOINED`; изоляция комнат X/Y
   - _Requirements: FR-7, FR-8, FR-9, FR-31, FR-38, US-5, US-10, US-11, Design: §4.2.1, §11.2, §13_
 
-- [ ] 7. Клиент: каркас Vite + React, гейт окружения и роутер
+- [x] 7. Клиент: каркас Vite + React, гейт окружения и роутер
   - Приложение открывается, проверяет окружение и различает маршруты
   - _После задачи 2_
   - 7.1 `packages/client`: Vite, React 19, `@vitejs/plugin-basic-ssl`, `server.host: true`, proxy `/socket.io` → `:3000` (`ws: true`)
