@@ -4,7 +4,7 @@
 > **Зависит от:** — (первый этап). **Блокирует:** этапы 2–5.
 > Каждая задача верхнего уровня — один PR, ≤ 1 рабочего дня. `FR-N` — номер функционального требования из PRD §4 (в скобках ID тест-задания), `US-N` — user story из PRD §3, `§N` — раздел TDD.
 
-- [ ] 1. Каркас монорепозитория и инструменты
+- [x] 1. Каркас монорепозитория и инструменты
   - npm workspaces с пустыми пакетами `shared`/`server`/`client` и `e2e/`, общий TS/ESLint/Prettier/Vitest
   - 1.1 Корневой `package.json`: `workspaces: ["packages/*", "e2e"]`, `"type": "module"`, `engines.node >= 22`, скрипты `typecheck`, `lint`, `test`
   - 1.2 `tsconfig.base.json` (strict, ES2022, `moduleResolution: bundler`), `tsconfig` в каждом пакете, `tsc -b`
