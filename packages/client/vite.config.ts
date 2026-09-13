@@ -1,6 +1,6 @@
 import basicSsl from '@vitejs/plugin-basic-ssl';
 import react from '@vitejs/plugin-react';
-import { defineConfig } from 'vite';
+import { createLogger, defineConfig } from 'vite';
 
 // E2E работает по http://localhost (это тоже secure context) на отдельных портах,
 // чтобы не конфликтовать с запущенным dev-окружением.
@@ -10,7 +10,19 @@ const serverTarget = e2e
   ? `http://127.0.0.1:${process.env.VCR_SERVER_PORT ?? '3100'}`
   : 'http://localhost:3000';
 
+// Клиент закрыл вкладку, пока прокси пересылал WebSocket-кадры, — штатная ситуация.
+// Vite печатает на неё стектрейс, который прячет настоящие ошибки; остальное логируем как есть.
+const CLIENT_GONE_CODES = new Set(['ECONNABORTED', 'ECONNRESET', 'EPIPE']);
+const logger = createLogger();
+const logError = logger.error.bind(logger);
+logger.error = (message, options) => {
+  const code = (options?.error as { code?: string } | null | undefined)?.code;
+  if (message.includes('ws proxy') && code !== undefined && CLIENT_GONE_CODES.has(code)) return;
+  logError(message, options);
+};
+
 export default defineConfig({
+  customLogger: logger,
   // Самоподписанный сертификат: без HTTPS браузер не даст камеру и микрофон при доступе по LAN.
   plugins: [react(), ...(e2e ? [] : [basicSsl()])],
   server: {
