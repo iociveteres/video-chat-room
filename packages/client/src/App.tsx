@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { checkEnvironment } from './app/environment';
 import { navigate, useRoute } from './app/router';
 import { LobbyPage } from './features/lobby/LobbyPage';
+import { RoomPage } from './features/room/RoomPage';
 import { StatusScreen } from './features/status/StatusScreen';
 import { AppStateProvider } from './state/AppStateProvider';
 
@@ -25,12 +26,8 @@ function Routes() {
     case 'lobby':
       return <LobbyPage />;
     case 'room':
-      // Заглушка до RoomPage (задача 11).
-      return (
-        <main className="screen">
-          <h1>Комната {route.roomId}</h1>
-        </main>
-      );
+      // key: при переходе в другую комнату страница монтируется заново со свежей формой.
+      return <RoomPage key={route.roomId} roomId={route.roomId} />;
     case 'invalid-link':
       return <StatusScreen reason="invalid-link" onHome={() => navigate('/')} />;
   }

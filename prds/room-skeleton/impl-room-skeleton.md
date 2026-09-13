@@ -102,7 +102,7 @@
   - 10.4 Component-тесты: подсказки и `disabled` у `NameForm`, тексты и кнопки `StatusScreen`
   - _Requirements: FR-1 (F-01), FR-2 (F-02), FR-8, FR-35, FR-36, FR-38, US-1, US-2, US-5, US-13, Design: §4.3 (страницы и компоненты), §8, §11.3_
 
-- [ ] 11. Клиент UI: экран комнаты
+- [x] 11. Клиент UI: экран комнаты
   - `RoomPage`, `RoomHeader`, `ParticipantList`, `CopyLinkButton`
   - _После задачи 10_
   - 11.1 `RoomPage`: `displayName === null` → `NameForm` с «Войти»; иначе рендер по `phase` (спиннер / комната / `StatusScreen`)

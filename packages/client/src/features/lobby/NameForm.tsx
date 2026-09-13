@@ -7,6 +7,8 @@ export interface NameFormProps {
   initialName?: string;
   /** Получает уже нормализованное имя. */
   onSubmit: (name: string) => void;
+  /** Ошибка извне (сервер отклонил имя); скрывается после первого изменения поля. */
+  error?: string;
 }
 
 const HINTS: Record<Extract<NameValidation, { ok: false }>['reason'], string> = {
@@ -16,15 +18,17 @@ const HINTS: Record<Extract<NameValidation, { ok: false }>['reason'], string> = 
     'Допустимы буквы, цифры, пробел, точка, дефис и подчёркивание; нужна хотя бы одна буква или цифра',
 };
 
-export function NameForm({ submitLabel, initialName = '', onSubmit }: NameFormProps) {
+export function NameForm({ submitLabel, initialName = '', onSubmit, error }: NameFormProps) {
   const inputId = useId();
   const hintId = useId();
   const [value, setValue] = useState(initialName);
   const [touched, setTouched] = useState(initialName !== '');
+  const [edited, setEdited] = useState(false);
 
   const validation = validateName(value);
   // Пустое поле до первого ввода не подсвечиваем — только блокируем кнопку.
-  const hint = !validation.ok && touched ? HINTS[validation.reason] : null;
+  const validationHint = !validation.ok && touched ? HINTS[validation.reason] : null;
+  const hint = validationHint ?? (edited ? null : (error ?? null));
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -46,6 +50,7 @@ export function NameForm({ submitLabel, initialName = '', onSubmit }: NameFormPr
         onChange={(event) => {
           setValue(event.target.value);
           setTouched(true);
+          setEdited(true);
         }}
         aria-invalid={hint !== null}
         aria-describedby={hint ? hintId : undefined}

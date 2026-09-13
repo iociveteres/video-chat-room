@@ -86,3 +86,102 @@ button:disabled {
   color: #dc2626;
   font-size: 0.875rem;
 }
+
+.spinner {
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 0.25rem solid #9ca3af;
+  border-top-color: #2563eb;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 3s;
+  }
+}
+
+.room {
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 1.5rem 2rem;
+}
+
+.room-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #9ca3af;
+}
+
+.room-header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.room-header__actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.copy-link {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.copy-link__fallback {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.875rem;
+}
+
+.copy-link__fallback input {
+  width: 22rem;
+  padding: 0.4rem 0.6rem;
+  font: inherit;
+}
+
+.toast {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  background: #111827;
+  color: #fff;
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.participants h2 {
+  font-size: 1.125rem;
+}
+
+.participants ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.participants li {
+  padding: 0.5rem 0;
+  overflow-wrap: anywhere;
+}
+
+.participants__self {
+  opacity: 0.7;
+}
