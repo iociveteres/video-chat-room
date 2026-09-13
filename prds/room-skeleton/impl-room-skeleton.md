@@ -51,7 +51,7 @@
   - 5.5 `leaveCurrentRoom.ts`: идемпотентный выход, `participant:left` только если комната не удалена; `room:leave` и `disconnect` вызывают его
   - _Requirements: FR-4 (F-04), FR-5, FR-6, FR-7, FR-8, FR-9, FR-26 (F-16), FR-27 (F-17), FR-28, FR-31 (F-18), FR-32, US-4, US-5, US-9, US-10, US-11, Design: §4.2 (`handlers/room.ts`, `leaveCurrentRoom.ts`), §6.2, §6.3, §7.2, §7.4, §8_
 
-- [ ] 6. Сервер: integration-тесты сокет-контракта
+- [x] 6. Сервер: integration-тесты сокет-контракта
   - Регрессионная защита атомарности и жизненного цикла комнаты
   - _После задачи 5_
   - 6.1 Хелпер `startTestServer()` и фабрика клиентов (`transports: ['websocket']`, `forceNew`, `reconnection: false`)
