@@ -14,7 +14,7 @@
   - 1.6 `.gitignore`: добавить `playwright-report/`, `test-results/`, `*.pem`
   - _Requirements: PRD §7 (обязательный стек), Design: §1.4, §2, §3.2, §3.3, §12.1_
 
-- [ ] 2. `@vcr/shared`: константы, валидация, генерация id, контракт этапа 1
+- [x] 2. `@vcr/shared`: константы, валидация, генерация id, контракт этапа 1
   - Общий код для клиента и сервера без зависимостей от DOM/Node
   - 2.1 `constants.ts`: `MAX_PARTICIPANTS`, `NAME_MAX_LENGTH`, `ROOM_ID_PATTERN`, `GENERATED_ROOM_ID_LENGTH`, `ACK_TIMEOUT_MS`, `CONNECT_TIMEOUT_MS`
   - 2.2 `validation.ts`: `normalizeName` (NFC → схлопывание пробелов → trim), `validateName` (whitelist `\p{L}\p{M}\p{N} ._-`, хотя бы одна буква/цифра, ≤ 30 code points), `isValidRoomId`
