@@ -8,8 +8,8 @@
 | **Версия** | 1.0 (Draft) |
 | **Дата** | 2026-09-13 |
 | **PRD** | [`prd-video-chat-room.md`](../../prd-video-chat-room.md) v1.0 |
-| **Зависит от** | [1 — room-skeleton](../room-skeleton/design-room-skeleton.md) (порядок ack → broadcast, callback-ack), [3 — local-media-controls](../local-media-controls/design-local-media-controls.md) (`MediaController`, `onTrackChange`, `VideoTile`) |
-| **Следующий этап** | [5 — mesh-group-call](../mesh-group-call/design-mesh-group-call.md) |
+| **Зависит от** | [1 — room-skeleton](../room-skeleton/design-room-skeleton-v2.md) (порядок ack → broadcast, callback-ack), [3 — local-media-controls](../local-media-controls/design-local-media-controls.md) (`MediaController`, `onTrackChange`, `VideoTile`) |
+| **Следующий этап** | [5 — mesh-group-call](../mesh-group-call/design-mesh-group-call-v2.md) |
 
 > Документ описывает **только дельту**. Общие решения заданы в TDD этапа 1.
 

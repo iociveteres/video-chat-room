@@ -5,12 +5,21 @@
 | **Документ** | Technical Design Document (TDD) |
 | **feature-name** | `room-skeleton` |
 | **Этап** | 1 из 5 |
-| **Версия** | 1.0 (Draft) |
-| **Актуальная версия** | [v2.0](design-room-skeleton-v2.md) |
+| **Версия** | 2.0 (Draft) |
+| **Предыдущая версия** | [v1.0](design-room-skeleton.md) |
 | **Дата** | 2026-09-13 |
 | **PRD** | [`prd-video-chat-room.md`](../../prd-video-chat-room.md) v1.0 |
 | **Зависит от** | — (первый этап) |
-| **Следующие этапы** | [2 — chat-system-messages](../chat-system-messages/design-chat-system-messages.md) · [3 — local-media-controls](../local-media-controls/design-local-media-controls.md) · [4 — webrtc-peer-call](../webrtc-peer-call/design-webrtc-peer-call.md) · [5 — mesh-group-call](../mesh-group-call/design-mesh-group-call.md) |
+| **Следующие этапы** | [2 — chat-system-messages](../chat-system-messages/design-chat-system-messages-v2.md) · [3 — local-media-controls](../local-media-controls/design-local-media-controls.md) · [4 — webrtc-peer-call](../webrtc-peer-call/design-webrtc-peer-call.md) · [5 — mesh-group-call](../mesh-group-call/design-mesh-group-call-v2.md) |
+
+---
+
+## Изменения в v2
+
+| Раздел | Изменение | Основание |
+|---|---|---|
+| §2, §3.2, §14 | `prds/**` отслеживаются в git. Добавлен TBD о расположении самого PRD | Решение по TBD-1 v1 |
+| Шапка | Ссылки на этапы 2 и 5 ведут на v2 | — |
 
 ---
 
@@ -65,10 +74,10 @@
 
 | Путь | Содержимое | Значение для дизайна |
 |---|---|---|
-| `prd-video-chat-room.md` | PRD v1.0, единственный источник требований | Исключён из git через `.gitignore` (незакоммиченное изменение). **TBD:** должны ли `prds/**` тоже быть вне git (см. §14) |
+| `prd-video-chat-room.md` | PRD v1.0, единственный источник требований | Исключён из git через `.gitignore` (коммит `chore(git): ignore local PRD file`). TDD в `prds/**` **отслеживаются в git** (решение v2). Ссылки из TDD на PRD работают только в локальной копии (см. §14) |
 | `.gitignore` | Стандартный шаблон GitHub для Node.js (`node_modules/`, `dist`, `.env*`, `coverage`, …) + строка `prd-video-chat-room.md` | Уже покрывает артефакты сборки и `.env`. Добавить нужно `playwright-report/`, `test-results/`, `*.pem` (dev-сертификаты) |
 | `.gitattributes` | Нормализация переносов строк | Без изменений |
-| Git | Одна ветка `main`, один коммит `Initial commit` | — |
+| Git | `main` с коммитом `Initial commit`; TDD v1 и v2 — в ветке `docs/technical-design` | — |
 
 Кода, схем БД и тестов нет, поэтому в разделах 3–4 вся структура **проектируемая**.
 
@@ -117,6 +126,7 @@ flowchart LR
 
 ```text
 video-chat-room/
+├─ prds/                        # TDD по этапам (отслеживаются в git)
 ├─ package.json                 # workspaces: ["packages/*", "e2e"], корневые скрипты
 ├─ tsconfig.base.json           # strict, ES2022, moduleResolution: bundler
 ├─ vitest.config.ts             # test.projects: ["packages/*"]
@@ -903,7 +913,7 @@ GitHub Actions, job на PR: `npm ci` → `lint` → `typecheck` → `test` → 
 
 ## 14. Open Questions / TBD
 
-1. **TBD:** Держать ли `prds/**` вне git, как `prd-video-chat-room.md`?
+1. **Решено (v2):** `prds/**` отслеживаются в git. **TBD:** сам PRD остаётся вне git, поэтому ссылки `../../prd-video-chat-room.md` из TDD в чужом клоне битые. Перенести PRD в `prds/video-chat-room/` и отслеживать или оставить локальным?
 2. **TBD:** Нужен ли на стартовом экране ручной ввод идентификатора комнаты («Войти по коду»)? PRD описывает только «Создать комнату» и вход по ссылке. Сейчас — нет.
 3. **TBD:** Формат URL: `/r/:roomId` (предложено) или `/:roomId`, `?room=`?
 4. **TBD:** Нужен ли на этапе 1 лимит `MAX_ROOMS` и подключений с IP, или откладываем до публичного деплоя (он вне скоупа)?

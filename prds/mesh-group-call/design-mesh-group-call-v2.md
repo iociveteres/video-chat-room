@@ -5,13 +5,23 @@
 | **Документ** | Technical Design Document (TDD) |
 | **feature-name** | `mesh-group-call` |
 | **Этап** | 5 из 5 |
-| **Версия** | 1.0 (Draft) |
-| **Актуальная версия** | [v2.0](design-mesh-group-call-v2.md) |
+| **Версия** | 2.0 (Draft) |
+| **Предыдущая версия** | [v1.0](design-mesh-group-call.md) |
 | **Дата** | 2026-09-13 |
 | **PRD** | [`prd-video-chat-room.md`](../../prd-video-chat-room.md) v1.0 |
-| **Зависит от** | [1 — room-skeleton](../room-skeleton/design-room-skeleton.md), [2 — chat-system-messages](../chat-system-messages/design-chat-system-messages.md), [3 — local-media-controls](../local-media-controls/design-local-media-controls.md), [4 — webrtc-peer-call](../webrtc-peer-call/design-webrtc-peer-call.md) (инварианты I1–I4, `PeerSession`, `PeerManager`) |
+| **Зависит от** | [1 — room-skeleton](../room-skeleton/design-room-skeleton-v2.md), [2 — chat-system-messages](../chat-system-messages/design-chat-system-messages-v2.md), [3 — local-media-controls](../local-media-controls/design-local-media-controls.md), [4 — webrtc-peer-call](../webrtc-peer-call/design-webrtc-peer-call.md) (инварианты I1–I4, `PeerSession`, `PeerManager`) |
 
 > Документ описывает **только дельту**. Ядро WebRTC (инварианты I1–I4) спроектировано на этапе 4 сразу под `Map` сессий, поэтому здесь нет переписывания, только **доказательство корректности для N ≤ 4**, изоляция отказов, сетка, производительность и приёмочное тестирование всего продукта.
+
+---
+
+## Изменения в v2
+
+| Раздел | Изменение | Основание |
+|---|---|---|
+| §1.1, §4.1, §13, §14 | Self-view — плитка в общей сетке, альтернатива с PiP снята | Решение по TBD-1 v1 |
+| §2, §4.3, §5, §9, §11, §12, §13, §14 | Потолок битрейта видео 1000 kbps включён по умолчанию (в v1: Should, 600 kbps) | Решение по TBD-2 v1 |
+| Шапка | Ссылки на этапы 1 и 2 ведут на v2 | — |
 
 ---
 
@@ -21,7 +31,7 @@
 
 Довести звонок до требований PRD для **полной комнаты из 4 участников** в топологии mesh:
 
-- адаптивная видеосетка 1–4 плитки (например, 2×2) с self-view и стабильным порядком (FR-11);
+- адаптивная видеосетка 1–4 плитки (например, 2×2); self-view — плитка в общей сетке; порядок стабильный (FR-11);
 - корректность согласования при **любом порядке и одновременности** входов и выходов, при N·(N−1)/2 = 6 соединениях;
 - **изоляция отказов**: сбой одной пары или одного участника не ломает звонок остальным (US-11);
 - контроль нагрузки: до 3 исходящих видеопотоков на клиента, задержка ≤ 500 мс в LAN (US-6);
@@ -70,7 +80,7 @@
 |---|---|---|---|
 | `packages/server/src/rooms/RoomRegistry.ts` | `join` (атомарно, `joinSeq`), `leave` | Реестр | Без изменений |
 | `packages/server/src/socket/handlers/signal.ts` | Relay + проверка ролей по `joinSeq` | Сигналинг | Без изменений |
-| `packages/client/src/call/PeerSession.ts` | I2 трансиверы, I4 `pendingCandidates` + `opChain`, `close()` | Одна пара | + опциональный `applySendParameters()` (потолок битрейта, Should) |
+| `packages/client/src/call/PeerSession.ts` | I2 трансиверы, I4 `pendingCandidates` + `opChain`, `close()` | Одна пара | + `applySendParameters()`: потолок битрейта видео 1000 kbps |
 | `packages/client/src/call/PeerManager.ts` | `Map<participantId, PeerSession>`, маршрутизация сигналов, fan-out `replaceTrack` через `Promise.all` | Реестр пар | **`Promise.all` → `Promise.allSettled`** (изоляция отказов), try/catch вокруг каждой сессии, диагностика |
 | `packages/client/src/features/call/VideoStage.tsx` | `SelfTile` + `RemoteTile[]` в flex-ряд | UI | Заменяется на `VideoGrid` |
 | `packages/client/src/features/call/RemoteTile.tsx`, `VideoTile.tsx`, `AutoplayGuard.tsx` | Плитки, autoplay | UI | Без изменений в логике; стабильные ключи |
@@ -202,7 +212,7 @@ CSS (эскиз):
 ```
 
 - При одной плитке (участник один) поверх self-view показывается подсказка «Пока никого нет. Скопируйте ссылку и отправьте её участникам» с кнопкой `CopyLinkButton`.
-- Self-плитка визуально отличается: подпись «Вы», рамка. См. §14 про альтернативу с PiP.
+- **Self-view — плитка в общей сетке** (решение v2): всегда первая, подпись «Вы», рамка, зеркалирование, `muted`. Отдельного PiP-окна нет.
 
 ### 4.2 `call/PeerManager.ts` (изменения)
 
@@ -227,7 +237,7 @@ handleSignal(from: string, data: SignalData): void {
 getSummary(): Array<{ participantId: string; role: PeerRole; status: PeerStatus }>;
 ```
 
-### 4.3 `call/PeerSession.ts` (Should: потолок битрейта)
+### 4.3 `call/PeerSession.ts` (потолок битрейта 1000 kbps)
 
 ```ts
 /** Вызывается однократно после первого перехода в connected. */
@@ -236,11 +246,12 @@ private async applySendParameters(): Promise<void> {
   if (!sender) return;
   const params = sender.getParameters();
   if (!params.encodings || params.encodings.length === 0) params.encodings = [{}]; // Firefox
-  params.encodings[0].maxBitrate = MAX_VIDEO_BITRATE_BPS;                         // 600 kbps
+  params.encodings[0].maxBitrate = MAX_VIDEO_BITRATE_BPS;                         // 1000 kbps
   try { await sender.setParameters(params); } catch (e) { console.warn('[peer] setParameters', e); }
 }
 ```
 
+- Без потолка libwebrtc (Chrome, Edge) допускает для 640×360 порядка 1.7 Mbps на поток. При 3 исходящих потоках потолок 1000 kbps снижает пиковый uplink примерно с 5 до 3 Mbps.
 - `setParameters` **не вызывает ренеготиацию** (I3 соблюдён).
 - Параметры кодирования живут на отправителе и сохраняются при `replaceTrack`.
 
@@ -269,7 +280,7 @@ private async applySendParameters(): Promise<void> {
 Новые константы в `@vcr/shared/constants.ts`:
 
 ```ts
-export const MAX_VIDEO_BITRATE_BPS = 600_000;   // Should, §9
+export const MAX_VIDEO_BITRATE_BPS = 1_000_000; // решение v2, §9
 export const DIAGNOSTICS_INTERVAL_MS = 2_000;
 ```
 
@@ -422,8 +433,8 @@ flowchart LR
 | Кодирование видео | 3 × 640×360@24 (независимые энкодеры на отправителя) |
 | Декодирование видео | 3 × 640×360 |
 | Аудио | 3 × Opus encode + 3 × decode + микширование в браузере |
-| Uplink | 3 × (видео ≤ 600 kbps при потолке + аудио ~40 kbps) ≈ **≤ 2 Mbps** |
-| Downlink | ≈ ≤ 2 Mbps |
+| Uplink | 3 × (видео ≤ 1000 kbps + аудио ~40 kbps) ≈ **≤ 3.2 Mbps** |
+| Downlink | ≈ ≤ 3.2 Mbps |
 
 ### 9.2 Целевые метрики и приёмка
 
@@ -441,7 +452,7 @@ flowchart LR
 
 | Рычаг | Статус | Ренеготиация? |
 |---|---|---|
-| `maxBitrate = 600 kbps` на видео-отправителе | **Should** (§4.3) | Нет (`setParameters`) |
+| `maxBitrate = 1000 kbps` на видео-отправителе | **Включено по умолчанию** (§4.3); при перегрузке CPU снижается | Нет (`setParameters`) |
 | Снижение захвата до 480×270@20 при N = 4 | TBD | Нет (`track.applyConstraints` на общем треке) |
 | `scaleResolutionDownBy` на отдельных отправителях | TBD | Нет (`setParameters`) |
 | Приоритет аудио (`priority: 'high'` для audio encoding) | Could | Нет |
@@ -472,7 +483,7 @@ flowchart LR
 | `getGridLayout` | 1→1×1, 2→2×1, 3→2×2 с центрированием, 4→2×2 |
 | `VideoGrid` (jsdom) | self первой; порядок по `joinedAt`; при выходе участника из середины DOM-узлы оставшихся `<video>` **те же** (сравнение ссылок) |
 | `PeerManager` N=3 | Fan-out `replaceTrack`: одна сессия reject → остальные получили вызов, Promise подписчика резолвится; исключение в `handleSignal` одной пары → `failed` только у неё |
-| `PeerSession.applySendParameters` | Пустые `encodings` (Firefox) → создан `[{}]`; reject `setParameters` → warn, статус не меняется |
+| `PeerSession.applySendParameters` | `maxBitrate === 1_000_000`; пустые `encodings` (Firefox) → создан `[{}]`; reject `setParameters` → warn, статус не меняется |
 
 ### 11.2 Property-based тест протокола ролей (Vitest + `fast-check`)
 
@@ -506,6 +517,7 @@ flowchart LR
 | 7 | **Изоляция пары** | Для D подменяется `RTCPeerConnection` так, что пара с C получает `iceTransportPolicy: 'relay'` → у C и D друг для друга «Не удалось установить медиасоединение», остальные 5 пар `connected` |
 | 8 | **Сетка** | Скриншот-сравнение (`toHaveScreenshot`, маска на видео) для 1, 2, 3, 4 участников на ширине 1024 и 1440 |
 | 9 | **Кросс-браузер (Should)** | Смешанная комната: 2 × Chromium + 1 × Firefox (fake-медиа через `firefoxUserPrefs`) → все пары `connected` |
+| 10 | **Потолок битрейта** | Через 10 с звонка у каждого видео-отправителя `getParameters().encodings[0].maxBitrate === 1_000_000`; средний битрейт `outbound-rtp(video)` за 10 с ≤ 1.1 Mbps |
 
 ### 11.5 Ручная приёмка на реальных устройствах (release checklist)
 
@@ -526,7 +538,7 @@ flowchart LR
 
 ## 12. Deployment & Migration Plan
 
-- Изменения только клиентские (сетка, `allSettled`, опциональный битрейт, диагностика). Серверный код и контракт не меняются.
+- Изменения только клиентские (сетка, `allSettled`, потолок битрейта 1000 kbps, диагностика). Серверный код и контракт не меняются.
 - Feature flags не нужны. Rollback — `git revert` PR этапа (вернётся раскладка этапа 4, звонок останется рабочим).
 - CI: отдельный Playwright-проект `mesh` (`workers: 1`, `timeout: 120s`) — можно запускать на `main` и по метке PR, если время прогона на каждом PR неприемлемо.
 - **Релиз v1.0** после этапа 5:
@@ -541,22 +553,25 @@ flowchart LR
 
 | Риск | Вероятность / влияние | Митигация |
 |---|---|---|
-| CPU/uplink слабого клиента не тянет 3 исходящих потока | Средняя / высокое (фризы у всех, кто его смотрит) | 640×360@24, `maxBitrate` (Should), рычаги §9.3, замер на эталонном ноутбуке |
+| CPU/uplink слабого клиента не тянет 3 исходящих потока | Средняя / высокое (фризы у всех, кто его смотрит) | 640×360@24, `maxBitrate` 1000 kbps, рычаги §9.3, замер на эталонном ноутбуке |
 | Нестабильные E2E с 4–5 браузерными контекстами в CI | Высокая / среднее | `workers: 1`, `retries: 1`, пониженное разрешение fake-медиа, отдельный проект `mesh` |
 | Скрытая ошибка в порядке ролей проявляется только при редком интерливинге | Низкая / высокое | Property-based тест (§11.2) + серверная проверка ролей |
 | Одна «битая» пара влияет на остальные через общий fan-out | Средняя / среднее | `Promise.allSettled`, `try/catch` на пару, E2E #7 |
 | Эхо при тестировании нескольких устройств в одном помещении воспринимается как баг | Высокая / низкое | README, наушники в чек-листе |
 | Асимметричная недостижимость (A видит B, B не видит A) | Низкая / среднее | ICE-пара общая для обоих направлений — `failed` виден обоим; ручная проверка через `webrtc-internals` |
-| Интерпретация «self-view отдельно» расходится с ожиданием заказчика | Средняя / низкое | Вынесено в §14, раскладка изолирована в `VideoGrid` |
 
 ---
 
 ## 14. Open Questions / TBD
 
-1. **TBD:** Self-view — **плитка в общей сетке** (предложено: сетка 1–4 и 2×2 при 4 участниках, как в PRD) или **отдельное PiP-окно** поверх сетки из 0–3 удалённых плиток? PRD допускает оба прочтения («сетка 2×2» и «собственное видео отдельно»).
-2. **TBD:** Включать ли потолок битрейта `600 kbps` по умолчанию (Should) или оставить браузерный контроль перегрузки без ограничений?
-3. **TBD:** Нужна ли адаптация разрешения захвата под число участников (480×270@20 при N = 4)?
-4. **TBD:** Эталонное устройство для метрики CPU (модель ноутбука/процессора).
-5. **TBD:** Нужен ли `DiagnosticsOverlay` в финальной сдаче (например, для демонстрации ≤ 500 мс) или только в dev?
-6. **TBD:** Порядок плиток — по времени входа (предложено) или «последний вошедший первым»? Изменение порядка существующих плиток нежелательно (§4.1).
-7. **Решено по умолчанию:** property-based тест протокола ролей использует `fast-check` как dev-зависимость.
+**Решено в v2:**
+- Self-view — плитка в общей сетке (§4.1).
+- Потолок битрейта видео — 1000 kbps по умолчанию (§4.3, §9).
+
+**Открыто:**
+1. **TBD:** Нужна ли адаптация разрешения захвата под число участников (480×270@20 при N = 4)?
+2. **TBD:** Эталонное устройство для метрики CPU (модель ноутбука/процессора).
+3. **TBD:** Нужен ли `DiagnosticsOverlay` в финальной сдаче (например, для демонстрации ≤ 500 мс) или только в dev?
+4. **TBD:** Порядок плиток — по времени входа (предложено) или «последний вошедший первым»? Изменение порядка существующих плиток нежелательно (§4.1).
+
+**Решено по умолчанию:** property-based тест протокола ролей использует `fast-check` как dev-зависимость.

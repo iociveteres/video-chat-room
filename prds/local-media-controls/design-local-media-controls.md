@@ -8,7 +8,7 @@
 | **Версия** | 1.0 (Draft) |
 | **Дата** | 2026-09-13 |
 | **PRD** | [`prd-video-chat-room.md`](../../prd-video-chat-room.md) v1.0 |
-| **Зависит от** | [1 — room-skeleton](../room-skeleton/design-room-skeleton.md), [2 — chat-system-messages](../chat-system-messages/design-chat-system-messages.md) (общий слот `notice`) |
+| **Зависит от** | [1 — room-skeleton](../room-skeleton/design-room-skeleton-v2.md), [2 — chat-system-messages](../chat-system-messages/design-chat-system-messages-v2.md) (общий слот `notice`) |
 | **Следующий этап** | [4 — webrtc-peer-call](../webrtc-peer-call/design-webrtc-peer-call.md) |
 
 > Документ описывает **только дельту**. Общие решения заданы в TDD этапа 1.
@@ -152,7 +152,7 @@ export const VIDEO_CONSTRAINTS: MediaTrackConstraints = {
 };
 ```
 
-> 640×360 при 24 fps выбрано с запасом под mesh на этапе 5: каждый клиент кодирует до 3 исходящих потоков. Разрешение уточняется в [TDD этапа 5](../mesh-group-call/design-mesh-group-call.md).
+> 640×360 при 24 fps выбрано с запасом под mesh на этапе 5: каждый клиент кодирует до 3 исходящих потоков. Разрешение уточняется в [TDD этапа 5](../mesh-group-call/design-mesh-group-call-v2.md).
 
 ### 4.2 Сервер
 
