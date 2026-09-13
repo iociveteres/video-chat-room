@@ -93,7 +93,7 @@
   - 9.6 Unit-тесты на фейковом сокете: успех, `ROOM_FULL`, таймаут connect/ack, обрыв, двойной join
   - _Requirements: FR-4, FR-8, FR-28, FR-31, FR-35, US-4, US-10, US-11, US-13, Design: §4.3 (`createSocket.ts`, `RoomSession.ts`), §7.1, §7.4, §8, §13_
 
-- [ ] 10. Клиент UI: стартовый экран и экраны статусов
+- [x] 10. Клиент UI: стартовый экран и экраны статусов
   - `LobbyPage`, `NameForm`, `StatusScreen`
   - _После задач 7, 9_
   - 10.1 `NameForm`: `<input maxLength={30}>`, живая подсказка по `validateName`, кнопка неактивна при невалидном имени

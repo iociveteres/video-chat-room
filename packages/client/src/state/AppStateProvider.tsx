@@ -18,11 +18,22 @@ const AppStateContext = createContext<AppState | null>(null);
 const AppDispatchContext = createContext<Dispatch<AppAction> | null>(null);
 const RoomSessionContext = createContext<RoomSession | null>(null);
 
-export function AppStateProvider({ children }: { children: ReactNode }) {
+export interface AppStateProviderProps {
+  children: ReactNode;
+  /** Подмена сессии (тесты); по умолчанию — RoomSession с настоящим сокетом. */
+  createSession?: (dispatch: Dispatch<AppAction>) => RoomSession;
+}
+
+const defaultCreateSession = (dispatch: Dispatch<AppAction>) => new RoomSession({ dispatch });
+
+export function AppStateProvider({
+  children,
+  createSession = defaultCreateSession,
+}: AppStateProviderProps) {
   const [state, dispatch] = useReducer(appReducer, initialAppState);
   // Одна сессия на всё время жизни провайдера, независимо от mount/unmount страниц.
   // dispatch из useReducer стабилен, поэтому ленивой инициализации достаточно.
-  const [session] = useState(() => new RoomSession({ dispatch }));
+  const [session] = useState(() => createSession(dispatch));
 
   useEffect(() => {
     const onPopState = () => {

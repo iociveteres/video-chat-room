@@ -4,6 +4,7 @@ import { defineProject } from 'vitest/config';
 export default defineProject({
   test: {
     name: '@vcr/client',
-    environment: 'node',
+    environment: 'jsdom',
+    setupFiles: ['./test/setup.ts'],
   },
 });
