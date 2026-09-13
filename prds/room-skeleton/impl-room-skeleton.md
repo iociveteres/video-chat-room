@@ -112,7 +112,7 @@
   - 11.5 Component-тест: имя `<img onerror>` рендерится текстом
   - _Requirements: FR-3 (F-03), FR-4 (F-04), FR-26 (F-16), FR-27 (F-17), FR-30, FR-39, US-3, US-4, US-9, US-10, Design: §4.3 (страницы и компоненты), §8, §10 (XSS), §11.3_
 
-- [ ] 12. E2E: Playwright и сценарии этапа 1
+- [x] 12. E2E: Playwright и сценарии этапа 1
   - Сквозная проверка комнаты в Chromium
   - _После задачи 11_
   - 12.1 `e2e/playwright.config.ts`: `webServer` (сервер + Vite), `http://localhost`, отдельный `browser.newContext()` на участника; скрипт `test:e2e`

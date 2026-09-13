@@ -12,11 +12,12 @@
   },
   "scripts": {
     "dev": "concurrently --names server,client --prefix-colors blue,green --kill-others \"npm -w @vcr/server run dev\" \"npm -w @vcr/client run dev\"",
-    "typecheck": "tsc -b . packages/shared packages/server packages/client",
+    "typecheck": "tsc -b . packages/shared packages/server packages/client e2e",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e": "playwright test -c e2e"
   },
   "devDependencies": {
     "@eslint-react/eslint-plugin": "^5.19.0",
