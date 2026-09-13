@@ -11,7 +11,8 @@
   "dependencies": {
     "@vcr/shared": "*",
     "express": "^5.2.1",
-    "socket.io": "^4.8.3"
+    "socket.io": "^4.8.3",
+    "zod": "^4.6.4"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",

@@ -1,0 +1,9 @@
+import { registerRoomHandlers } from './handlers/room';
+import type { HandlerContext } from './types';
+
+export function registerSocketHandlers(ctx: HandlerContext): void {
+  ctx.io.on('connection', (socket) => {
+    ctx.logger.debug('Socket connected', { socketId: socket.id });
+    registerRoomHandlers(ctx, socket);
+  });
+}

@@ -41,7 +41,7 @@
   - 4.6 Integration-тест: `/healthz` отвечает `200`, SPA fallback отдаёт `index.html`
   - _Requirements: FR-35 (серверная часть), PRD §7 (HTTPS), Design: §4.2 (`app.ts`), §6.1, §10 (CSP), §12.2, §12.3_
 
-- [ ] 5. Сервер: обработчики `room:join` / `room:leave` / `disconnect`
+- [x] 5. Сервер: обработчики `room:join` / `room:leave` / `disconnect`
   - Вход, выход и обрыв с рассылкой `participant:*`
   - _После задач 3, 4_
   - 5.1 `socket/schemas.ts`: `JoinRequestSchema` (`.strict()`)

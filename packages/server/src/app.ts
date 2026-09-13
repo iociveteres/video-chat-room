@@ -8,6 +8,7 @@ import { Server } from 'socket.io';
 import { DEFAULT_PING_INTERVAL_MS, DEFAULT_PING_TIMEOUT_MS } from './config';
 import { createLogger, type Logger } from './logger';
 import { RoomRegistry } from './rooms/RoomRegistry';
+import { registerSocketHandlers } from './socket/registerSocketHandlers';
 import type { AppServer } from './socket/types';
 
 /** SDP на этапе 4 весит ~5–10 KB; дефолтный 1 MB избыточен. */
@@ -64,6 +65,7 @@ export function createAppServer(opts: AppServerOptions): AppServerHandle {
     maxHttpBufferSize: SOCKET_MAX_HTTP_BUFFER_SIZE,
     serveClient: false,
   });
+  registerSocketHandlers({ io, registry, logger });
 
   return {
     httpServer,

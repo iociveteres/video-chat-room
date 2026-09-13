@@ -5,6 +5,8 @@ import type {
   SocketData,
 } from '@vcr/shared';
 import type { Server, Socket } from 'socket.io';
+import type { Logger } from '../logger';
+import type { RoomRegistry } from '../rooms/RoomRegistry';
 
 export type AppServer = Server<
   ClientToServerEvents,
@@ -19,3 +21,9 @@ export type AppSocket = Socket<
   InterServerEvents,
   SocketData
 >;
+
+export interface HandlerContext {
+  io: AppServer;
+  registry: RoomRegistry;
+  logger: Logger;
+}
