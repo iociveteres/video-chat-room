@@ -10,7 +10,7 @@ export interface NameFormProps {
 }
 
 const HINTS: Record<Extract<NameValidation, { ok: false }>['reason'], string> = {
-  EMPTY: 'Введите имя',
+  EMPTY: 'Имя не должно быть пустым',
   TOO_LONG: `Не больше ${NAME_MAX_LENGTH} символов`,
   FORBIDDEN_CHARS:
     'Допустимы буквы, цифры, пробел, точка, дефис и подчёркивание; нужна хотя бы одна буква или цифра',

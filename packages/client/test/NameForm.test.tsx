@@ -22,7 +22,7 @@ describe('NameForm', () => {
     expect(button).toBeDisabled();
     expect(input).toHaveAttribute('maxLength', String(NAME_MAX_LENGTH));
     expect(input).not.toHaveAttribute('aria-invalid', 'true');
-    expect(screen.queryByText('Введите имя')).not.toBeInTheDocument();
+    expect(screen.queryByText('Имя не должно быть пустым')).not.toBeInTheDocument();
   });
 
   it('enables the button for a valid name', async () => {
@@ -34,16 +34,16 @@ describe('NameForm', () => {
     expect(input).toHaveAttribute('aria-invalid', 'false');
   });
 
-  it('shows «Введите имя» after the field is cleared or holds only spaces', async () => {
+  it('shows «Имя не должно быть пустым» after the field is cleared or holds only spaces', async () => {
     const { user, input, button } = setup();
 
     await user.type(input, 'А');
     await user.clear(input);
-    expect(screen.getByText('Введите имя')).toBeInTheDocument();
+    expect(screen.getByText('Имя не должно быть пустым')).toBeInTheDocument();
     expect(button).toBeDisabled();
 
     await user.type(input, '   ');
-    expect(screen.getByText('Введите имя')).toBeInTheDocument();
+    expect(screen.getByText('Имя не должно быть пустым')).toBeInTheDocument();
     expect(input).toHaveAttribute('aria-invalid', 'true');
   });
 
