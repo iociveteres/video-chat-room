@@ -1,6 +1,7 @@
 import { useState, type MouseEvent } from 'react';
 import { checkEnvironment, type EnvironmentCheck } from './app/environment';
 import { navigate, useRoute } from './app/router';
+import { AppStateProvider } from './state/AppStateProvider';
 
 // Тексты по TDD §8. В задаче 10 экраны статусов переедут в StatusScreen,
 // а заглушки лобби и комнаты заменят LobbyPage и RoomPage.
@@ -24,7 +25,11 @@ export function App() {
     );
   }
 
-  return <Routes />;
+  return (
+    <AppStateProvider>
+      <Routes />
+    </AppStateProvider>
+  );
 }
 
 function Routes() {

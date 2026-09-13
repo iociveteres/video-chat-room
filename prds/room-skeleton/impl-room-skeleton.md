@@ -73,7 +73,7 @@
   - 7.6 Unit-тесты: `checkEnvironment` (3 исхода на подменённом `window`), `parseRoute` (`/`, `/r/abc`, `/r/`, `/r/<script>`)
   - _Requirements: FR-4, FR-36, US-13, PRD §7 (HTTPS), Design: §3.1, §4.3 (`environment.ts`, `router.ts`), §8, §12.2_
 
-- [ ] 8. Клиент: состояние приложения (`appReducer`)
+- [x] 8. Клиент: состояние приложения (`appReducer`)
   - Чистый сериализуемый state и провайдер
   - _После задачи 2_
   - 8.1 `state/actions.ts`, `state/appReducer.ts`: `AppState`, `SessionPhase`, `JoinFailure`, все `AppAction` этапа 1
