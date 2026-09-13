@@ -23,7 +23,7 @@
   - 2.5 Unit-тесты: пустое/пробелы, 30/31 code point, кириллица, NFD→NFC, эмодзи и `<>`, «только `._-`»; `generateRoomId` — длина, алфавит, 10 000 генераций без коллизий
   - _Requirements: FR-1 (F-01), FR-2 (F-02), FR-30, FR-38, US-1, Design: §4.1, §11.1_
 
-- [ ] 3. Сервер: `RoomRegistry` с атомарным лимитом
+- [x] 3. Сервер: `RoomRegistry` с атомарным лимитом
   - In-memory модель комнат, синхронные `join`/`leave`
   - 3.1 `rooms/types.ts`: `Participant`, `Room`
   - 3.2 `RoomRegistry`: `join` (создать → проверить лимит → добавить, **без `await`**, тип возврата не `Promise`), `leave` (идемпотентно, удаляет пустую комнату), `getRoom`, `getParticipant`, `listParticipants` (по `joinedAt`), `roomCount`; DI `now`, `maxParticipants`
