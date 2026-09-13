@@ -31,7 +31,7 @@
   - 3.4 Unit-тесты: создание при первом join; 5-й → `ROOM_FULL`; leave удаляет пустую комнату; повторный leave → `null`; повторный join после удаления создаёт новый `Room`; одинаковые имена; порядок
   - _Requirements: FR-5, FR-7 (F-05), FR-9, FR-29, FR-30, US-5, US-10, Design: §4.2, §4.2.1, §5, §11.1_
 
-- [ ] 4. Сервер: HTTP/Socket.io bootstrap
+- [x] 4. Сервер: HTTP/Socket.io bootstrap
   - `createAppServer` для dev, prod-like режима и тестов (`port: 0`)
   - 4.1 `config.ts`: `PORT`, `HOST`, `TLS_KEY_PATH`/`TLS_CERT_PATH`, `CLIENT_DIST_DIR`, `SOCKET_PING_INTERVAL_MS`/`SOCKET_PING_TIMEOUT_MS`, `LOG_LEVEL`
   - 4.2 `logger.ts`: уровни, без PII (только `roomId`, `participantId`)
