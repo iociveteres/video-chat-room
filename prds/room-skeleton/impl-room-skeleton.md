@@ -82,7 +82,7 @@
   - 8.4 Unit-тесты на все переходы state-diagram
   - _Requirements: FR-26, FR-28, FR-30, Design: §3.1 (принцип 3), §4.3 (`appReducer.ts`), §11.1_
 
-- [ ] 9. Клиент: `RoomSession` и сокет
+- [x] 9. Клиент: `RoomSession` и сокет
   - Владелец side effects: подключение, вход, выход, обрыв
   - _После задач 5, 8_
   - 9.1 `net/createSocket.ts`: `io({ autoConnect: false, reconnection: false, timeout: CONNECT_TIMEOUT_MS })`
