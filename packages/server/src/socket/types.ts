@@ -31,4 +31,6 @@ export interface HandlerContext {
   logger: Logger;
   /** Антифлуд нового участника; лимиты задаются опциями сервера. */
   createChatBucket: () => TokenBucket;
+  /** Этап 4: антифлуд сигналинга нового участника. */
+  createSignalBucket: () => TokenBucket;
 }

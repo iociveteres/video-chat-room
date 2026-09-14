@@ -27,6 +27,8 @@ export class RoomRegistry {
   private readonly rooms = new Map<string, Room>();
   private readonly maxParticipants: number;
   private readonly now: () => number;
+  /** Счётчик для Participant.joinSeq; общий на все комнаты, не сбрасывается. */
+  private seq = 0;
 
   constructor(opts: RoomRegistryOptions = {}) {
     this.maxParticipants = opts.maxParticipants ?? MAX_PARTICIPANTS;
@@ -42,7 +44,7 @@ export class RoomRegistry {
    * и добавление по разным шагам — иначе в комнату попадёт лишний участник.
    * Любую асинхронную работу выполняйте ДО вызова join.
    */
-  join(roomId: string, input: Omit<Participant, 'joinedAt'>): JoinResult {
+  join(roomId: string, input: Omit<Participant, 'joinedAt' | 'joinSeq'>): JoinResult {
     const existing = this.rooms.get(roomId);
     if (existing && existing.participants.size >= this.maxParticipants) {
       return { ok: false, reason: 'ROOM_FULL' };
@@ -56,7 +58,12 @@ export class RoomRegistry {
     };
     if (!existing) this.rooms.set(roomId, room);
 
-    const participant: Participant = { ...input, media: { ...input.media }, joinedAt: this.now() };
+    const participant: Participant = {
+      ...input,
+      media: { ...input.media },
+      joinedAt: this.now(),
+      joinSeq: this.seq++,
+    };
     room.participants.set(participant.id, participant);
     return { ok: true, room, participant };
   }

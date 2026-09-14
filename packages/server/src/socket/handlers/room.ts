@@ -31,6 +31,7 @@ export function registerRoomHandlers(ctx: HandlerContext, socket: AppSocket): vo
         socketId: socket.id,
         name: name.value,
         chatBucket: ctx.createChatBucket(),
+        signalBucket: ctx.createSignalBucket(),
         media: parsed.data.media,
       });
       if (!result.ok) return ack(ackError('ROOM_FULL'));
