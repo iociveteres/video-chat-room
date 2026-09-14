@@ -1,5 +1,11 @@
+import { PEER_CONNECT_TIMEOUT_MS } from '@vcr/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_ICE_SERVERS, getRtcConfiguration, parseIceServers } from '../src/call/rtcConfig';
+import {
+  DEFAULT_ICE_SERVERS,
+  getPeerConnectTimeoutMs,
+  getRtcConfiguration,
+  parseIceServers,
+} from '../src/call/rtcConfig';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -102,5 +108,33 @@ describe('getRtcConfiguration', () => {
       iceServers: [{ urls: 'stun:127.0.0.1:9' }],
       iceTransportPolicy: 'relay',
     });
+  });
+});
+
+describe('getPeerConnectTimeoutMs', () => {
+  it('defaults to PEER_CONNECT_TIMEOUT_MS when unset', () => {
+    expect(getPeerConnectTimeoutMs({})).toBe(PEER_CONNECT_TIMEOUT_MS);
+    expect(getPeerConnectTimeoutMs({ VITE_PEER_CONNECT_TIMEOUT_MS: ' ' })).toBe(
+      PEER_CONNECT_TIMEOUT_MS,
+    );
+  });
+
+  it('uses a positive integer from the env', () => {
+    expect(getPeerConnectTimeoutMs({ VITE_PEER_CONNECT_TIMEOUT_MS: '3000' })).toBe(3_000);
+  });
+
+  it.each(['0', '-1', '1.5', 'soon'])('falls back to the default and warns for %j', (raw) => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    expect(getPeerConnectTimeoutMs({ VITE_PEER_CONNECT_TIMEOUT_MS: raw })).toBe(
+      PEER_CONNECT_TIMEOUT_MS,
+    );
+    expect(warn).toHaveBeenCalledOnce();
+  });
+
+  it('reads import.meta.env by default', () => {
+    vi.stubEnv('VITE_PEER_CONNECT_TIMEOUT_MS', '1234');
+
+    expect(getPeerConnectTimeoutMs()).toBe(1_234);
   });
 });

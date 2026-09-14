@@ -1,3 +1,5 @@
+import { PEER_CONNECT_TIMEOUT_MS } from '@vcr/shared';
+
 /** Публичные Google STUN: TURN нет, недостижимость отдельной пары допустима (PRD §7). */
 export const DEFAULT_ICE_SERVERS: readonly RTCIceServer[] = [
   { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
@@ -58,4 +60,19 @@ function isIceServer(value: unknown): value is RTCIceServer {
     (username === undefined || typeof username === 'string') &&
     (credential === undefined || typeof credential === 'string')
   );
+}
+
+/**
+ * Таймаут медиасоединения из VITE_PEER_CONNECT_TIMEOUT_MS: E2E-сценарий «ICE failed» собирает
+ * клиент с коротким значением, чтобы не ждать 20 с. Не задан или не целое > 0 — дефолт.
+ */
+export function getPeerConnectTimeoutMs(
+  env: Pick<ImportMetaEnv, 'VITE_PEER_CONNECT_TIMEOUT_MS'> = import.meta.env,
+): number {
+  const raw = env.VITE_PEER_CONNECT_TIMEOUT_MS;
+  if (raw === undefined || raw.trim() === '') return PEER_CONNECT_TIMEOUT_MS;
+  const value = Number(raw);
+  if (Number.isInteger(value) && value > 0) return value;
+  console.warn('VITE_PEER_CONNECT_TIMEOUT_MS is not a positive integer, using the default');
+  return PEER_CONNECT_TIMEOUT_MS;
 }

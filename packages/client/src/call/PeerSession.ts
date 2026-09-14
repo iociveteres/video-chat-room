@@ -1,5 +1,5 @@
-import type { SignalData } from '@vcr/shared';
-import type { LocalTracks } from '../media/MediaController';
+import { PEER_CONNECT_TIMEOUT_MS, type IceCandidateDTO, type SignalData } from '@vcr/shared';
+import type { LocalTracks, TrackKind } from '../media/MediaController';
 
 export type PeerRole = 'offerer' | 'answerer';
 export type PeerStatus = 'connecting' | 'connected' | 'unstable' | 'failed' | 'closed';
@@ -16,6 +16,25 @@ export interface PeerSessionDeps {
   createPeerConnection?: (config: RTCConfiguration) => RTCPeerConnection;
   /** DI для unit-тестов: в jsdom нет MediaStream. */
   createStream?: () => MediaStream;
+  /** Сколько ждать connected после отправки offer/answer; по умолчанию PEER_CONNECT_TIMEOUT_MS. */
+  connectTimeoutMs?: number;
+}
+
+/** iceConnectionState, а не connectionState: второго нет в Firefox 100–112 (TDD §1.3). */
+export function toPeerStatus(state: RTCIceConnectionState): PeerStatus {
+  switch (state) {
+    case 'connected':
+    case 'completed':
+      return 'connected';
+    case 'disconnected':
+      return 'unstable';
+    case 'failed':
+      return 'failed';
+    case 'closed':
+      return 'closed';
+    default: // new, checking
+      return 'connecting';
+  }
 }
 
 /**
@@ -25,7 +44,8 @@ export interface PeerSessionDeps {
  *   negotiationneeded не обрабатывается.
  * - I2: трансиверы фиксированы — m=audio, затем m=video, оба sendrecv, даже без трека.
  * - I3: треки меняются только через replaceTrack; addTrack/removeTrack запрещены.
- * - I4: SDP-операции сериализованы в opChain; после каждого await — проверка closed.
+ * - I4: входящие ICE-кандидаты до применения remote description буферизуются; SDP-операции
+ *   и replaceTrack сериализованы в opChain; после каждого await — проверка closed.
  */
 export class PeerSession {
   readonly remoteId: string;
@@ -37,12 +57,28 @@ export class PeerSession {
   private readonly getLocalTracks: PeerSessionDeps['getLocalTracks'];
   private readonly sendSignal: PeerSessionDeps['sendSignal'];
   private readonly onStatus: PeerSessionDeps['onStatus'];
+  private readonly connectTimeoutMs: number;
 
   private audioTx: RTCRtpTransceiver | null = null;
   private videoTx: RTCRtpTransceiver | null = null;
   private opChain: Promise<void> = Promise.resolve();
   private started = false;
   private closed = false;
+  private status: PeerStatus | null = null;
+  private connectTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * I4: выставляется, когда remote description применён И буфер кандидатов разобран.
+   * Флаг, а не pc.remoteDescription: пока SRD в процессе, это поле ещё null.
+   */
+  private remoteDescriptionApplied = false;
+  /** I4: входящие кандидаты до remote description, в порядке получения. */
+  private pendingCandidates: IceCandidateDTO[] = [];
+  /**
+   * Исходящие кандидаты до отправки offer/answer. У адресата нет сессии, пока не пришёл offer:
+   * кандидат, обогнавший его, был бы потерян.
+   */
+  private outgoingCandidates: IceCandidateDTO[] | null = [];
 
   constructor(deps: PeerSessionDeps) {
     this.remoteId = deps.remoteId;
@@ -50,6 +86,7 @@ export class PeerSession {
     this.getLocalTracks = deps.getLocalTracks;
     this.sendSignal = deps.sendSignal;
     this.onStatus = deps.onStatus;
+    this.connectTimeoutMs = deps.connectTimeoutMs ?? PEER_CONNECT_TIMEOUT_MS;
     this.remoteStream = deps.createStream?.() ?? new MediaStream();
     this.pc = (deps.createPeerConnection ?? ((config) => new RTCPeerConnection(config)))(
       deps.rtcConfig,
@@ -57,6 +94,10 @@ export class PeerSession {
     // I1/I3: ренеготиации нет. Браузер шлёт negotiationneeded после addTransceiver —
     // обработчик сознательно пуст, иначе появился бы второй offer и glare.
     this.pc.onnegotiationneeded = null;
+    this.pc.onicecandidate = (event) => {
+      if (event.candidate) this.sendCandidate(toCandidateDTO(event.candidate.toJSON()));
+    };
+    this.pc.oniceconnectionstatechange = () => this.onIceConnectionStateChange();
   }
 
   /** Только offerer: создать трансиверы и отправить offer. Повторный вызов игнорируется. */
@@ -76,7 +117,7 @@ export class PeerSession {
       if (this.closed) return;
       await this.pc.setLocalDescription(offer);
       if (this.closed) return;
-      this.sendSignal({ type: 'offer', sdp: this.localSdp() });
+      this.sendDescription({ type: 'offer', sdp: this.localSdp() });
     });
   }
 
@@ -90,20 +131,43 @@ export class PeerSession {
         void this.enqueue(() => this.onAnswer(data.sdp));
         break;
       case 'candidate':
-        // Буферизация и применение кандидатов (I4) добавляются следующим шагом.
+        // Кандидаты не идут в opChain: иначе ждали бы не относящиеся к ним операции.
+        if (this.remoteDescriptionApplied) void this.addCandidate(data.candidate);
+        else this.pendingCandidates.push(data.candidate);
         break;
     }
+  }
+
+  /**
+   * Без ренеготиации (I3). Сериализовано с SDP-шагами: replaceTrack(null), поставленный во
+   * время ответа на offer, выполнится после него и победит. Без трансивера (answerer до offer)
+   * — no-op: трек прочитается из getLocalTracks() при ответе.
+   */
+  replaceTrack(kind: TrackKind, track: MediaStreamTrack | null): Promise<void> {
+    return this.enqueue(async () => {
+      const tx = kind === 'audio' ? this.audioTx : this.videoTx;
+      if (!tx) return;
+      await tx.sender.replaceTrack(track);
+    });
+  }
+
+  /** Диагностика и E2E. */
+  getStats(): Promise<RTCStatsReport> {
+    return this.pc.getStats();
   }
 
   /** Идемпотентно. Локальные треки не трогает: ими владеет MediaController. */
   close(): void {
     if (this.closed) return;
     this.closed = true;
+    this.clearConnectTimeout();
+    this.pendingCandidates = [];
+    this.outgoingCandidates = null;
     this.pc.onicecandidate = null;
     this.pc.oniceconnectionstatechange = null;
     // Удалённые треки переходят в ended.
     this.pc.close();
-    this.onStatus('closed');
+    this.setStatus('closed');
   }
 
   private async onOffer(sdp: string): Promise<void> {
@@ -112,6 +176,8 @@ export class PeerSession {
       return this.protocolViolation('unexpected-offer');
     }
     await this.pc.setRemoteDescription({ type: 'offer', sdp });
+    if (this.closed) return;
+    await this.flushPendingCandidates();
     if (this.closed) return;
 
     // Порядок m-line у разных браузеров может отличаться: ищем по kind, а не по индексу.
@@ -139,7 +205,7 @@ export class PeerSession {
     if (this.closed) return;
     await this.pc.setLocalDescription(answer);
     if (this.closed) return;
-    this.sendSignal({ type: 'answer', sdp: this.localSdp() });
+    this.sendDescription({ type: 'answer', sdp: this.localSdp() });
   }
 
   private async onAnswer(sdp: string): Promise<void> {
@@ -147,14 +213,82 @@ export class PeerSession {
       return this.protocolViolation('unexpected-answer');
     }
     await this.pc.setRemoteDescription({ type: 'answer', sdp });
+    if (this.closed) return;
+    await this.flushPendingCandidates();
+  }
+
+  /**
+   * В исходном порядке. Кандидаты, пришедшие во время разбора, встают в конец того же буфера,
+   * а флаг выставляется только на пустом буфере — поэтому они не обгоняют более ранние.
+   */
+  private async flushPendingCandidates(): Promise<void> {
+    while (this.pendingCandidates.length > 0) {
+      const candidate = this.pendingCandidates.shift()!;
+      await this.addCandidate(candidate);
+      if (this.closed) return;
+    }
+    this.remoteDescriptionApplied = true;
+  }
+
+  /** Один плохой кандидат не валит сессию: у ICE есть другие пары. */
+  private async addCandidate(candidate: IceCandidateDTO): Promise<void> {
+    try {
+      await this.pc.addIceCandidate(candidate);
+    } catch (err) {
+      if (!this.closed) console.warn('PeerSession addIceCandidate failed', this.remoteId, err);
+    }
+  }
+
+  private sendDescription(data: Extract<SignalData, { type: 'offer' | 'answer' }>): void {
+    this.sendSignal(data);
+    const queued = this.outgoingCandidates ?? [];
+    this.outgoingCandidates = null;
+    for (const candidate of queued) this.sendSignal({ type: 'candidate', candidate });
+    this.armConnectTimeout();
+  }
+
+  private sendCandidate(candidate: IceCandidateDTO): void {
+    if (this.closed) return;
+    if (this.outgoingCandidates) this.outgoingCandidates.push(candidate);
+    else this.sendSignal({ type: 'candidate', candidate });
+  }
+
+  private onIceConnectionStateChange(): void {
+    // Событие, поставленное в очередь до close(), может прийти после него.
+    if (this.closed) return;
+    const status = toPeerStatus(this.pc.iceConnectionState);
+    // После connected или failed ICE таймаут больше не нужен: итог уже известен.
+    if (status === 'connected' || status === 'failed') this.clearConnectTimeout();
+    this.setStatus(status);
+  }
+
+  /**
+   * failed, если за connectTimeoutMs не было connected (например, STUN недоступен и host-пары
+   * не проходят). PC не закрывается: соединится позже — статус обновится.
+   */
+  private armConnectTimeout(): void {
+    this.clearConnectTimeout();
+    if (toPeerStatus(this.pc.iceConnectionState) === 'connected') return;
+    this.connectTimer = setTimeout(() => {
+      this.connectTimer = null;
+      console.warn('PeerSession connect timeout', this.remoteId);
+      this.setStatus('failed');
+    }, this.connectTimeoutMs);
+  }
+
+  private clearConnectTimeout(): void {
+    if (this.connectTimer === null) return;
+    clearTimeout(this.connectTimer);
+    this.connectTimer = null;
   }
 
   /** receiver.track существует с создания трансивера, поэтому ontrack не нужен. */
   private attachRemoteTracks(): void {
     for (const tx of [this.audioTx, this.videoTx]) {
       const track = tx?.receiver.track;
-      if (track && !this.remoteStream.getTracks().includes(track))
+      if (track && !this.remoteStream.getTracks().includes(track)) {
         this.remoteStream.addTrack(track);
+      }
     }
   }
 
@@ -172,14 +306,32 @@ export class PeerSession {
     return this.opChain;
   }
 
+  /** Повтор того же статуса не сообщается (connected → completed и т.п.). */
+  private setStatus(status: PeerStatus): void {
+    if (this.status === status) return;
+    this.status = status;
+    this.onStatus(status);
+  }
+
   private fail(reason: string, err?: unknown): void {
     if (this.closed) return;
     console.warn(`PeerSession failed: ${reason}`, this.remoteId, err);
-    this.onStatus('failed');
+    this.clearConnectTimeout();
+    this.setStatus('failed');
   }
 
   /** Неожиданный сигнал: игнорируется, состояние сессии не меняется. */
   private protocolViolation(reason: string): void {
     console.warn(`PeerSession protocol violation: ${reason}`, this.remoteId);
   }
+}
+
+/** Поля RTCIceCandidateInit необязательны, в DTO — явные null (схема сервера строгая). */
+function toCandidateDTO(init: RTCIceCandidateInit): IceCandidateDTO {
+  return {
+    candidate: init.candidate ?? '',
+    sdpMid: init.sdpMid ?? null,
+    sdpMLineIndex: init.sdpMLineIndex ?? null,
+    ...(init.usernameFragment != null && { usernameFragment: init.usernameFragment }),
+  };
 }
