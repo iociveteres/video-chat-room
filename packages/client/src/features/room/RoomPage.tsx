@@ -1,8 +1,10 @@
 import { navigate } from '../../app/router';
 import { useAppState, useRoomSession } from '../../state/AppStateProvider';
 import { VideoStage } from '../call/VideoStage';
+import { ControlBar } from '../controls/ControlBar';
 import { NameForm } from '../lobby/NameForm';
 import { StatusScreen } from '../status/StatusScreen';
+import { MediaAccessBanner } from './MediaAccessBanner';
 import { RoomHeader } from './RoomHeader';
 import { RoomSidebar } from './RoomSidebar';
 
@@ -13,7 +15,7 @@ export interface RoomPageProps {
 export function RoomPage({ roomId }: RoomPageProps) {
   const state = useAppState();
   const session = useRoomSession();
-  const { displayName, phase } = state;
+  const { displayName, phase, joinStep } = state;
 
   // Все входы — из обработчиков действий пользователя, не из эффектов (TDD §4.3).
   const join = (name: string) => session.join(roomId, name);
@@ -39,6 +41,18 @@ export function RoomPage({ roomId }: RoomPageProps) {
         <main className="screen">
           <div className="spinner" aria-hidden="true" />
           <p role="status">Подключаемся к комнате…</p>
+          {joinStep === 'acquiring-media' && (
+            <>
+              <p>Разрешите доступ к камере и микрофону во всплывающем окне браузера</p>
+              <button
+                type="button"
+                className="button--secondary"
+                onClick={() => session.joinWithoutMedia()}
+              >
+                Войти без камеры и микрофона
+              </button>
+            </>
+          )}
         </main>
       );
 
@@ -46,10 +60,12 @@ export function RoomPage({ roomId }: RoomPageProps) {
       return (
         <div className="room">
           <div className="room__main">
-            <RoomHeader roomId={roomId} onLeave={goHome} />
+            <RoomHeader roomId={roomId} />
+            <MediaAccessBanner />
             <div className="room__stage">
               <VideoStage />
             </div>
+            <ControlBar onLeave={goHome} />
           </div>
           <RoomSidebar />
         </div>

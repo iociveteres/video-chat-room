@@ -2,10 +2,10 @@ import { CopyLinkButton } from './CopyLinkButton';
 
 export interface RoomHeaderProps {
   roomId: string;
-  onLeave: () => void;
 }
 
-export function RoomHeader({ roomId, onLeave }: RoomHeaderProps) {
+/** «Выйти» переехал в панель управления под видео (TDD этапа 3 §14, п. 5). */
+export function RoomHeader({ roomId }: RoomHeaderProps) {
   // Каноничная ссылка на комнату, без случайных query/hash из адресной строки.
   const url = `${window.location.origin}/r/${roomId}`;
 
@@ -16,9 +16,6 @@ export function RoomHeader({ roomId, onLeave }: RoomHeaderProps) {
       </h1>
       <div className="room-header__actions">
         <CopyLinkButton url={url} />
-        <button type="button" className="button--secondary" onClick={onLeave}>
-          Выйти
-        </button>
       </div>
     </header>
   );

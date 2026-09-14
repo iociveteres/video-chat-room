@@ -192,6 +192,65 @@ button:disabled {
   color: #f87171;
 }
 
+.control-bar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.device-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #2563eb;
+}
+
+.device-toggle--off {
+  border-color: #9ca3af;
+  background: transparent;
+  color: inherit;
+}
+
+.device-toggle--problem {
+  border-color: #dc2626;
+}
+
+.device-toggle__icon {
+  position: relative;
+  display: inline-flex;
+}
+
+/* Предупреждение в углу иконки: устройство недоступно не по воле пользователя. */
+.device-toggle__warning {
+  position: absolute;
+  right: -0.4rem;
+  bottom: -0.3rem;
+  display: inline-flex;
+  color: #dc2626;
+}
+
+.control-bar__leave {
+  background: #dc2626;
+}
+
+.media-banner {
+  flex-shrink: 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid #f59e0b;
+  border-radius: 0.5rem;
+  background: rgb(245 158 11 / 12%);
+}
+
+.participants__media {
+  display: inline-flex;
+  gap: 0.25rem;
+  margin-left: 0.5rem;
+  color: #dc2626;
+  vertical-align: middle;
+}
+
 .avatar-placeholder {
   position: absolute;
   inset: 0;
@@ -412,7 +471,8 @@ button:disabled {
 
 .notice {
   position: fixed;
-  bottom: 1.5rem;
+  /* Выше панели управления под видео (этап 3), чтобы не закрывать кнопки. */
+  bottom: 5.5rem;
   left: 50%;
   display: flex;
   align-items: center;

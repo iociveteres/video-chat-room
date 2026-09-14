@@ -1,7 +1,7 @@
 import { MAX_PARTICIPANTS } from '@vcr/shared';
 import { useId, useRef, useState, type KeyboardEvent } from 'react';
 import { useAppState } from '../../state/AppStateProvider';
-import { selectParticipants } from '../../state/selectors';
+import { selectParticipantMedia, selectParticipants } from '../../state/selectors';
 import { ChatPanel } from '../chat/ChatPanel';
 import { ParticipantList } from './ParticipantList';
 
@@ -16,6 +16,7 @@ const TAB_ORDER: SidebarTab[] = ['chat', 'participants'];
 export function RoomSidebar() {
   const state = useAppState();
   const participants = selectParticipants(state);
+  const selfMedia = state.selfId ? selectParticipantMedia(state, state.selfId) : null;
   const [activeTab, setActiveTab] = useState<SidebarTab>('chat');
   const baseId = useId();
   const tabsRef = useRef<Partial<Record<SidebarTab, HTMLButtonElement | null>>>({});
@@ -89,7 +90,11 @@ export function RoomSidebar() {
         aria-labelledby={tabId('participants')}
         hidden={activeTab !== 'participants'}
       >
-        <ParticipantList participants={participants} selfId={state.selfId} />
+        <ParticipantList
+          participants={participants}
+          selfId={state.selfId}
+          selfMedia={selfMedia ?? undefined}
+        />
       </div>
     </aside>
   );

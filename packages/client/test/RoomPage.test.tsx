@@ -181,6 +181,144 @@ describe('RoomPage', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Подключаемся к комнате…');
   });
 
+  describe('local media controls', () => {
+    const joinAlone = async (t: ReturnType<typeof renderRoom>) => {
+      await enterName(t.user);
+      await t.serverAcceptsJoin({
+        ok: true,
+        self: alex,
+        participants: [maria, alex],
+        messages: [],
+      });
+    };
+    const toolbar = () => screen.getByRole('toolbar', { name: 'Управление звонком' });
+    const mediaUpdates = (t: ReturnType<typeof renderRoom>) =>
+      t
+        .lastSocket()
+        .emitted.filter((c) => c.event === 'media:update')
+        .map((c) => c.args[0]);
+
+    it('shows the control bar with both devices on and «Выйти»; the header has no «Выйти»', async () => {
+      const t = renderRoom();
+      await joinAlone(t);
+
+      const bar = within(toolbar());
+      expect(bar.getByRole('button', { name: 'Микрофон' })).toHaveAttribute('aria-pressed', 'true');
+      expect(bar.getByRole('button', { name: 'Камера' })).toHaveAttribute('aria-pressed', 'true');
+      expect(bar.getByRole('button', { name: 'Выйти' })).toBeInTheDocument();
+      expect(
+        within(screen.getByRole('banner')).queryByRole('button', { name: 'Выйти' }),
+      ).toBeNull();
+    });
+
+    it('the microphone toggle mutes, sends media:update and marks self in the list', async () => {
+      const t = renderRoom();
+      await joinAlone(t);
+
+      await t.user.click(within(toolbar()).getByRole('button', { name: 'Микрофон' }));
+      await t.settleMedia();
+
+      const mic = within(toolbar()).getByRole('button', { name: 'Микрофон' });
+      expect(mic).toHaveAttribute('aria-pressed', 'false');
+      expect(mic).toHaveAttribute('title', 'Микрофон выключен');
+      expect(mediaUpdates(t)).toEqual([{ audio: false, video: true }]);
+      await t.user.click(screen.getByRole('tab', { name: /Участники/ }));
+      const selfItem = within(screen.getByRole('list')).getAllByRole('listitem')[1]!;
+      expect(within(selfItem).getByRole('img', { name: 'Микрофон выключен' })).toBeInTheDocument();
+    });
+
+    it('the camera toggle stops the track and shows the placeholder', async () => {
+      const t = renderRoom();
+      await joinAlone(t);
+      // В StrictMode провайдер может создать сессию дважды — берём трек у фейковых устройств.
+      const track = t.media.devices.createdTracks.find((created) => created.kind === 'video')!;
+
+      await t.user.click(within(toolbar()).getByRole('button', { name: 'Камера' }));
+      await t.settleMedia();
+
+      expect(track.readyState).toBe('ended');
+      expect(within(toolbar()).getByRole('button', { name: 'Камера' })).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      );
+      expect(screen.getByRole('figure', { name: 'Вы' })).toHaveTextContent('Камера выключена');
+    });
+
+    it('shows remote media changes as icons in the participant list', async () => {
+      const t = renderRoom();
+      await joinAlone(t);
+
+      act(() =>
+        t.lastSocket().serverEmit('participant:media', {
+          participantId: maria.id,
+          media: { audio: false, video: false },
+        }),
+      );
+
+      await t.user.click(screen.getByRole('tab', { name: /Участники/ }));
+      const mariaItem = within(screen.getByRole('list')).getAllByRole('listitem')[0]!;
+      expect(
+        within(mariaItem)
+          .getAllByRole('img')
+          .map((icon) => icon.getAttribute('aria-label')),
+      ).toEqual(['Микрофон выключен', 'Камера выключена']);
+    });
+
+    it('«Выйти» releases the devices', async () => {
+      const t = renderRoom();
+      await joinAlone(t);
+
+      await t.user.click(within(toolbar()).getByRole('button', { name: 'Выйти' }));
+
+      expect(t.media.devices.createdTracks.every((track) => track.readyState === 'ended')).toBe(
+        true,
+      );
+    });
+
+    it('denied access → the user is in the room with a persistent banner', async () => {
+      const t = renderRoom();
+      t.media.devices.rejectWith('NotAllowedError');
+      await joinAlone(t);
+
+      expect(screen.getByRole('region', { name: 'Нет доступа к устройствам' })).toHaveTextContent(
+        'Нет доступа к камере и микрофону.',
+      );
+      expect(within(toolbar()).getByRole('button', { name: 'Камера' })).toHaveAttribute(
+        'title',
+        'Нет доступа к камере',
+      );
+      expect(t.lastSocket().lastEmitted('room:join').args[0]).toMatchObject({
+        media: { audio: false, video: false },
+      });
+    });
+
+    it('waiting for permission: hint and «Войти без камеры и микрофона» continue the join', async () => {
+      const t = renderRoom();
+      t.media.devices.deferNext();
+
+      await enterName(t.user);
+      await t.settleMedia();
+
+      expect(
+        screen.getByText('Разрешите доступ к камере и микрофону во всплывающем окне браузера'),
+      ).toBeInTheDocument();
+      expect(t.sockets).toHaveLength(0);
+
+      await t.user.click(screen.getByRole('button', { name: 'Войти без камеры и микрофона' }));
+
+      expect(screen.queryByRole('button', { name: 'Войти без камеры и микрофона' })).toBeNull();
+      expect(t.sockets).toHaveLength(1);
+      await t.serverAcceptsJoin({ ok: true, self: alex, participants: [alex], messages: [] });
+      expect(t.lastSocket().lastEmitted('room:join').args[0]).toMatchObject({
+        media: { audio: false, video: false },
+      });
+      expect(within(toolbar()).getByRole('button', { name: 'Камера' })).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      );
+    });
+  });
+
   describe('chat', () => {
     const joinedAlex = {
       kind: 'system',

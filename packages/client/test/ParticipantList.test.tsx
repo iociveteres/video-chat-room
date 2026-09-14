@@ -37,4 +37,54 @@ describe('ParticipantList', () => {
     expect(container.querySelector('img')).toBeNull();
     expect((window as { __xss?: boolean }).__xss).toBeUndefined();
   });
+
+  describe('media icons', () => {
+    const icons = (item: HTMLElement) =>
+      within(item)
+        .queryAllByRole('img')
+        .map((icon) => icon.getAttribute('aria-label'));
+
+    it('shows crossed-out microphone and camera by the server state of others', () => {
+      render(
+        <ParticipantList
+          participants={[
+            { id: 'a', name: 'Все вкл', joinedAt: 1, media: { audio: true, video: true } },
+            { id: 'b', name: 'Без звука', joinedAt: 2, media: { audio: false, video: true } },
+            { id: 'c', name: 'Без видео', joinedAt: 3, media: { audio: true, video: false } },
+            { id: 'd', name: 'Всё выкл', joinedAt: 4, media: { audio: false, video: false } },
+          ]}
+          selfId={null}
+        />,
+      );
+
+      expect(screen.getAllByRole('listitem').map(icons)).toEqual([
+        [],
+        ['Микрофон выключен'],
+        ['Камера выключена'],
+        ['Микрофон выключен', 'Камера выключена'],
+      ]);
+    });
+
+    it('uses selfMedia instead of the server copy for self', () => {
+      render(
+        <ParticipantList
+          participants={[
+            { id: 'me', name: 'Я', joinedAt: 1, media: { audio: true, video: true } },
+            { id: 'other', name: 'Он', joinedAt: 2, media: { audio: true, video: true } },
+          ]}
+          selfId="me"
+          selfMedia={{ audio: false, video: true }}
+        />,
+      );
+
+      const [self, other] = screen.getAllByRole('listitem');
+      expect(icons(self!)).toEqual(['Микрофон выключен']);
+      expect(icons(other!)).toEqual([]);
+    });
+
+    it('does not add icon text to the item text', () => {
+      render(<ParticipantList participants={participants} selfId="p1" />);
+      expect(screen.getAllByRole('listitem')[0]?.textContent).toBe('Мария (вы)');
+    });
+  });
 });
