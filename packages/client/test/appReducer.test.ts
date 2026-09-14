@@ -4,9 +4,24 @@ import type { AppAction, JoinFailure } from '../src/state/actions';
 import { appReducer, initialAppState, type AppState } from '../src/state/appReducer';
 import { selectIsSelf, selectParticipants, selectSelf } from '../src/state/selectors';
 
-const alex: ParticipantDTO = { id: 'p-alex', name: 'Алекс', joinedAt: 1_000 };
-const maria: ParticipantDTO = { id: 'p-maria', name: 'Мария', joinedAt: 2_000 };
-const boris: ParticipantDTO = { id: 'p-boris', name: 'Борис', joinedAt: 3_000 };
+const alex: ParticipantDTO = {
+  id: 'p-alex',
+  name: 'Алекс',
+  joinedAt: 1_000,
+  media: { audio: false, video: false },
+};
+const maria: ParticipantDTO = {
+  id: 'p-maria',
+  name: 'Мария',
+  joinedAt: 2_000,
+  media: { audio: false, video: false },
+};
+const boris: ParticipantDTO = {
+  id: 'p-boris',
+  name: 'Борис',
+  joinedAt: 3_000,
+  media: { audio: false, video: false },
+};
 
 function reduce(state: AppState, ...actions: AppAction[]): AppState {
   return actions.reduce(appReducer, state);

@@ -4,6 +4,7 @@ import type {
   ChatSendAck,
   ClientToServerEvents,
   JoinAck,
+  MediaState,
   ParticipantDTO,
   ServerToClientEvents,
 } from '@vcr/shared';
@@ -42,14 +43,27 @@ export function disconnectAll(): void {
   openClients.clear();
 }
 
-export function join(client: TestClient, roomId: string, name = 'Тест'): Promise<JoinAck> {
+/** Начальное media в room:join, если тесту не важно конкретное значение. */
+export const DEFAULT_MEDIA: MediaState = { audio: true, video: true };
+
+export function join(
+  client: TestClient,
+  roomId: string,
+  name = 'Тест',
+  media: MediaState = DEFAULT_MEDIA,
+): Promise<JoinAck> {
   return new Promise((resolve) => {
-    client.emit('room:join', { roomId, name }, resolve);
+    client.emit('room:join', { roomId, name, media }, resolve);
   });
 }
 
-export async function joinOk(client: TestClient, roomId: string, name = 'Тест') {
-  const res = await join(client, roomId, name);
+export async function joinOk(
+  client: TestClient,
+  roomId: string,
+  name = 'Тест',
+  media: MediaState = DEFAULT_MEDIA,
+) {
+  const res = await join(client, roomId, name, media);
   if (!res.ok) throw new Error(`join failed: ${res.error.code}`);
   return res;
 }

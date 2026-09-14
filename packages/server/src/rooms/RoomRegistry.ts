@@ -1,4 +1,4 @@
-import { MAX_PARTICIPANTS, type ParticipantDTO } from '@vcr/shared';
+import { MAX_PARTICIPANTS, type MediaState, type ParticipantDTO } from '@vcr/shared';
 import type { Participant, Room } from './types';
 
 export type JoinResult =
@@ -14,8 +14,9 @@ export interface RoomRegistryOptions {
   now?: () => number;
 }
 
-export function toParticipantDTO({ id, name, joinedAt }: Participant): ParticipantDTO {
-  return { id, name, joinedAt };
+export function toParticipantDTO({ id, name, joinedAt, media }: Participant): ParticipantDTO {
+  // Копия: DTO уходит наружу и не должен меняться вместе с участником.
+  return { id, name, joinedAt, media: { ...media } };
 }
 
 /**
@@ -55,7 +56,7 @@ export class RoomRegistry {
     };
     if (!existing) this.rooms.set(roomId, room);
 
-    const participant: Participant = { ...input, joinedAt: this.now() };
+    const participant: Participant = { ...input, media: { ...input.media }, joinedAt: this.now() };
     room.participants.set(participant.id, participant);
     return { ok: true, room, participant };
   }
@@ -70,6 +71,17 @@ export class RoomRegistry {
     const roomDeleted = room.participants.size === 0;
     if (roomDeleted) this.rooms.delete(roomId);
     return { participant, roomDeleted };
+  }
+
+  /** Синхронно. Возвращает false, если участника нет или состояние не изменилось. */
+  updateMedia(roomId: string, participantId: string, media: MediaState): boolean {
+    const participant = this.rooms.get(roomId)?.participants.get(participantId);
+    if (!participant) return false;
+    if (participant.media.audio === media.audio && participant.media.video === media.video) {
+      return false;
+    }
+    participant.media = { audio: media.audio, video: media.video };
+    return true;
   }
 
   getRoom(roomId: string): Readonly<Room> | undefined {

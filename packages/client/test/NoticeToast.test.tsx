@@ -26,7 +26,7 @@ function renderToast() {
     dispatch!({ type: 'JOIN_REQUESTED', roomId: 'room1', name: 'Алекс' });
     dispatch!({
       type: 'JOIN_SUCCEEDED',
-      self: { id: 'p1', name: 'Алекс', joinedAt: 1 },
+      self: { id: 'p1', name: 'Алекс', joinedAt: 1, media: { audio: false, video: false } },
       participants: [],
       messages: [],
     });

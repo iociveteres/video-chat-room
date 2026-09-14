@@ -7,8 +7,18 @@ import { RoomSession } from '../src/session/RoomSession';
 import { AppStateProvider } from '../src/state/AppStateProvider';
 import { FakeSocket } from './helpers/FakeSocket';
 
-const alex: ParticipantDTO = { id: 'p-alex', name: 'Алекс', joinedAt: 1_000 };
-const maria: ParticipantDTO = { id: 'p-maria', name: 'Мария', joinedAt: 2_000 };
+const alex: ParticipantDTO = {
+  id: 'p-alex',
+  name: 'Алекс',
+  joinedAt: 1_000,
+  media: { audio: false, video: false },
+};
+const maria: ParticipantDTO = {
+  id: 'p-maria',
+  name: 'Мария',
+  joinedAt: 2_000,
+  media: { audio: false, video: false },
+};
 
 const fromMaria = {
   kind: 'user',

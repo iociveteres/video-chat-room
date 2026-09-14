@@ -9,9 +9,24 @@ import { RoomPage } from '../src/features/room/RoomPage';
 import { FakeSocket } from './helpers/FakeSocket';
 
 const ROOM = 'q7Z3kP0aX_2m';
-const alex: ParticipantDTO = { id: 'p-alex', name: 'Алекс', joinedAt: 2_000 };
-const maria: ParticipantDTO = { id: 'p-maria', name: 'Мария', joinedAt: 1_000 };
-const boris: ParticipantDTO = { id: 'p-boris', name: 'Борис', joinedAt: 3_000 };
+const alex: ParticipantDTO = {
+  id: 'p-alex',
+  name: 'Алекс',
+  joinedAt: 2_000,
+  media: { audio: false, video: false },
+};
+const maria: ParticipantDTO = {
+  id: 'p-maria',
+  name: 'Мария',
+  joinedAt: 1_000,
+  media: { audio: false, video: false },
+};
+const boris: ParticipantDTO = {
+  id: 'p-boris',
+  name: 'Борис',
+  joinedAt: 3_000,
+  media: { audio: false, video: false },
+};
 
 function renderRoom() {
   const sockets: FakeSocket[] = [];
@@ -82,7 +97,9 @@ describe('RoomPage', () => {
 
     t.serverAcceptsJoin({ ok: true, self: alex, participants: [maria, alex], messages: [] });
 
-    expect(t.lastSocket().lastEmitted('room:join').args).toEqual([{ roomId: ROOM, name: 'Алекс' }]);
+    expect(t.lastSocket().lastEmitted('room:join').args).toEqual([
+      { roomId: ROOM, name: 'Алекс', media: { audio: false, video: false } },
+    ]);
     expect(screen.getByRole('heading', { name: `Комната ${ROOM}` })).toBeInTheDocument();
     await t.user.click(screen.getByRole('tab', { name: 'Участники (2/4)' }));
     const items = within(screen.getByRole('list')).getAllByRole('listitem');

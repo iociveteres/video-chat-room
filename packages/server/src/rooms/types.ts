@@ -1,4 +1,4 @@
-import type { ChatMessage } from '@vcr/shared';
+import type { ChatMessage, MediaState } from '@vcr/shared';
 import type { TokenBucket } from '../chat/TokenBucket';
 
 export interface Participant {
@@ -10,6 +10,8 @@ export interface Participant {
   joinedAt: number;
   /** Антифлуд чата; создаётся при входе, у каждого участника свой. */
   chatBucket: TokenBucket;
+  /** Этап 3: начальное значение из room:join, дальше — media:update. */
+  media: MediaState;
 }
 
 export interface Room {

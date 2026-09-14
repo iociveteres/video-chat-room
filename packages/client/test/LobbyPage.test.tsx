@@ -52,7 +52,9 @@ describe('LobbyPage', () => {
 
     const roomId = window.location.pathname.slice('/r/'.length);
     sockets[0]!.serverConnect();
-    expect(sockets[0]!.lastEmitted('room:join').args).toEqual([{ roomId, name: 'Алекс' }]);
+    expect(sockets[0]!.lastEmitted('room:join').args).toEqual([
+      { roomId, name: 'Алекс', media: { audio: false, video: false } },
+    ]);
   });
 
   it('does not join before the user submits', () => {

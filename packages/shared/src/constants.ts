@@ -24,3 +24,30 @@ export const CHAT_HISTORY_LIMIT = 200;
 
 /** Антифлуд на участника: token bucket — всплеск до burst, дальше refillPerSecond (FR-40). */
 export const CHAT_RATE_LIMIT = { burst: 5, refillPerSecond: 1 } as const;
+
+/**
+ * Подмножество DOM `MediaTrackConstraints`: shared собирается без DOM lib, а клиент
+ * передаёт эти объекты в getUserMedia как есть — структура совместима.
+ */
+export interface MediaConstraintsSpec {
+  echoCancellation?: boolean;
+  noiseSuppression?: boolean;
+  autoGainControl?: boolean;
+  width?: { ideal?: number; max?: number };
+  height?: { ideal?: number; max?: number };
+  frameRate?: { ideal?: number; max?: number };
+}
+
+/** Ограничения микрофона при захвате (FR-13). */
+export const AUDIO_CONSTRAINTS: Readonly<MediaConstraintsSpec> = {
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
+};
+
+/** 640×360@24: запас под mesh, где каждый клиент кодирует до 3 исходящих потоков (TDD этапа 3 §4.1). */
+export const VIDEO_CONSTRAINTS: Readonly<MediaConstraintsSpec> = {
+  width: { ideal: 640 },
+  height: { ideal: 360 },
+  frameRate: { ideal: 24, max: 30 },
+};

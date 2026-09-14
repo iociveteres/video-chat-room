@@ -3,6 +3,7 @@ import {
   CONNECT_TIMEOUT_MS,
   type ChatSendAck,
   type JoinAck,
+  type MediaState,
   type ServerErrorCode,
 } from '@vcr/shared';
 import type { Dispatch } from 'react';
@@ -11,6 +12,12 @@ import type { AppAction, ChatSendFailure, JoinFailure } from '../state/actions';
 
 /** Сколько ждём ack на room:leave, прежде чем просто закрыть соединение. */
 export const LEAVE_ACK_TIMEOUT_MS = 2_000;
+
+/**
+ * Временная заглушка этапа 3: медиа ещё не захватывается, поэтому в room:join уходит «всё выключено».
+ * Уберётся, когда RoomSession начнёт владеть MediaController (impl этапа 3, задача 6).
+ */
+const NO_MEDIA: MediaState = { audio: false, video: false };
 
 export interface RoomSessionDeps {
   dispatch: Dispatch<AppAction>;
@@ -203,7 +210,7 @@ export class RoomSession {
     // событий из той же пачки пакетов, и в списке появились бы «призраки» (TDD §4.3).
     socket
       .timeout(ACK_TIMEOUT_MS)
-      .emit('room:join', { roomId, name }, (err: Error | null, res: JoinAck) => {
+      .emit('room:join', { roomId, name, media: NO_MEDIA }, (err: Error | null, res: JoinAck) => {
         if (this.socket !== socket || this.status !== 'joining') return;
         if (err) return this.fail('SERVER_UNAVAILABLE');
         if (!res.ok) return this.fail(mapJoinError(res.error.code));
