@@ -1,4 +1,4 @@
-import { AUDIO_CONSTRAINTS, VIDEO_CONSTRAINTS } from '@vcr/shared';
+import { AUDIO_CONSTRAINTS, VIDEO_CONSTRAINTS, type MediaConstraintsSpec } from '@vcr/shared';
 import { describe, expect, it, vi } from 'vitest';
 import {
   classify,
@@ -14,7 +14,9 @@ import {
   FakeTrack,
 } from './helpers/FakeMedia';
 
-function setup(opts: { permissions?: FakePermissions } = {}) {
+function setup(
+  opts: { permissions?: FakePermissions; videoConstraints?: MediaConstraintsSpec } = {},
+) {
   const devices = new FakeMediaDevices();
   const preview = new FakeMediaStream();
   const statusLog: [TrackKind, DeviceStatus][] = [];
@@ -30,6 +32,7 @@ function setup(opts: { permissions?: FakePermissions } = {}) {
     },
     onNotice: (text, tone) => notices.push({ text, tone }),
     createStream: () => preview as unknown as MediaStream,
+    videoConstraints: opts.videoConstraints,
   });
 
   const liveTracks = () => devices.createdTracks.filter((t) => t.readyState === 'live');
@@ -60,6 +63,17 @@ describe('MediaController.acquireInitial', () => {
     expect(video).toMatchObject({ kind: 'video', readyState: 'live' });
     expect(t.preview.getTracks()).toEqual([video]);
     expect(t.notices).toEqual([]);
+  });
+
+  it('uses the injected video constraints for the camera, also when turned on later', async () => {
+    const low = { width: { ideal: 320 }, height: { ideal: 180 }, frameRate: { max: 15 } };
+    const t = setup({ videoConstraints: low });
+
+    await t.controller.acquireInitial();
+    await t.controller.setVideoEnabled(false);
+    await t.controller.setVideoEnabled(true);
+
+    expect(t.devices.requests).toEqual([{ audio: AUDIO_CONSTRAINTS, video: low }, { video: low }]);
   });
 
   it('requests only the microphone when there is no videoinput', async () => {

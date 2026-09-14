@@ -1,5 +1,8 @@
+import type { MediaConstraintsSpec } from '@vcr/shared';
+import type { PeerSummary } from '../call/PeerManager';
 import { getPeerConnectTimeoutMs, getRtcConfiguration } from '../call/rtcConfig';
 import type { LocalTracks } from '../media/MediaController';
+import { getVideoConstraints } from '../media/videoConstraints';
 import type { RoomSession } from '../session/RoomSession';
 
 /**
@@ -27,6 +30,8 @@ export interface VcrE2EHook {
   peers: {
     /** Участники, с которыми сейчас есть медиасоединение. */
     ids(): string[];
+    /** Этап 5: роль и статус каждой пары — ожидание «все пары connected» в mesh. */
+    summary(): PeerSummary[];
     /** Отчёт getStats() массивом словарей — сериализуем для page.evaluate; null без сессии. */
     getStats(participantId: string): Promise<RTCStats[] | null>;
   };
@@ -34,7 +39,11 @@ export interface VcrE2EHook {
     /** Отправленные сигналы по адресатам за жизнь вкладки: проверка «ровно один offer». */
     signalCounts(): SignalCounts;
     /** Конфигурация звонка из env сборки: E2E убеждается, что проект запущен с нужным env. */
-    callConfig(): { rtc: RTCConfiguration; connectTimeoutMs: number };
+    callConfig(): {
+      rtc: RTCConfiguration;
+      connectTimeoutMs: number;
+      videoConstraints: MediaConstraintsSpec;
+    };
   };
 }
 
@@ -87,6 +96,7 @@ export function installE2EHook(
     },
     peers: {
       ids: () => session.peers.ids(),
+      summary: () => session.peers.getSummary(),
       getStats: async (participantId) => {
         const report = await session.peers.getStats(participantId);
         return report ? [...report.values()] : null;
@@ -98,6 +108,7 @@ export function installE2EHook(
       callConfig: () => ({
         rtc: getRtcConfiguration(),
         connectTimeoutMs: getPeerConnectTimeoutMs(),
+        videoConstraints: getVideoConstraints(),
       }),
     },
   };

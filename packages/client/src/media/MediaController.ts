@@ -1,4 +1,9 @@
-import { AUDIO_CONSTRAINTS, VIDEO_CONSTRAINTS, type MediaState } from '@vcr/shared';
+import {
+  AUDIO_CONSTRAINTS,
+  VIDEO_CONSTRAINTS,
+  type MediaConstraintsSpec,
+  type MediaState,
+} from '@vcr/shared';
 import { acquireNotice, deviceStatusLabel, lostNotice } from './mediaTexts';
 
 export type TrackKind = 'audio' | 'video';
@@ -32,6 +37,8 @@ export interface MediaControllerDeps {
   onNotice: (text: string, tone: 'info' | 'error') => void;
   /** Фабрика previewStream; подменяется в тестах (в jsdom нет MediaStream). */
   createStream?: () => MediaStream;
+  /** Ограничения камеры; по умолчанию VIDEO_CONSTRAINTS (E2E понижает, см. videoConstraints.ts). */
+  videoConstraints?: MediaConstraintsSpec;
 }
 
 const KINDS: readonly TrackKind[] = ['audio', 'video'];
@@ -77,11 +84,6 @@ function shouldRetryPerDevice(error: unknown): boolean {
   return status === 'busy' || status === 'not-found' || isOverconstrained(error);
 }
 
-function constraintsFor(kind: TrackKind, unconstrained: boolean): MediaStreamConstraints {
-  if (unconstrained) return { [kind]: true };
-  return kind === 'audio' ? { audio: AUDIO_CONSTRAINTS } : { video: VIDEO_CONSTRAINTS };
-}
-
 /**
  * Владелец локальных MediaStreamTrack; вне React, чтобы треки не попадали в state.
  *
@@ -96,6 +98,7 @@ export class MediaController {
   private readonly permissions: MediaControllerDeps['permissions'];
   private readonly onStatus: MediaControllerDeps['onStatus'];
   private readonly onNotice: MediaControllerDeps['onNotice'];
+  private readonly videoConstraints: MediaConstraintsSpec;
 
   private readonly tracks: LocalTracks = { audio: null, video: null };
   private readonly statuses: Record<TrackKind, DeviceStatus> = { audio: 'off', video: 'off' };
@@ -114,6 +117,7 @@ export class MediaController {
     this.permissions = deps.permissions;
     this.onStatus = deps.onStatus;
     this.onNotice = deps.onNotice;
+    this.videoConstraints = deps.videoConstraints ?? VIDEO_CONSTRAINTS;
     this.previewStream = deps.createStream?.() ?? new MediaStream();
   }
 
@@ -297,6 +301,11 @@ export class MediaController {
     }
   }
 
+  private constraintsFor(kind: TrackKind, unconstrained: boolean): MediaStreamConstraints {
+    if (unconstrained) return { [kind]: true };
+    return kind === 'audio' ? { audio: AUDIO_CONSTRAINTS } : { video: this.videoConstraints };
+  }
+
   /** Статусы запрошенных устройств; null — операция устарела из-за stopAll(). */
   private async acquireKinds(
     wanted: TrackKind[],
@@ -306,7 +315,7 @@ export class MediaController {
     try {
       const stream = await this.md.getUserMedia({
         audio: wanted.includes('audio') && AUDIO_CONSTRAINTS,
-        video: wanted.includes('video') && VIDEO_CONSTRAINTS,
+        video: wanted.includes('video') && this.videoConstraints,
       });
       if (!this.adopt(stream, generation, wanted)) return null;
       for (const kind of wanted) statuses[kind] = this.tracks[kind] ? 'on' : 'failed';
@@ -360,12 +369,12 @@ export class MediaController {
     try {
       let stream: MediaStream;
       try {
-        stream = await this.md.getUserMedia(constraintsFor(kind, unconstrained));
+        stream = await this.md.getUserMedia(this.constraintsFor(kind, unconstrained));
       } catch (error) {
         if (unconstrained || !isOverconstrained(error) || generation !== this.generation) {
           throw error;
         }
-        stream = await this.md.getUserMedia(constraintsFor(kind, true));
+        stream = await this.md.getUserMedia(this.constraintsFor(kind, true));
       }
       if (!this.adopt(stream, generation, [kind])) return null;
       return this.tracks[kind] ? 'on' : 'failed';

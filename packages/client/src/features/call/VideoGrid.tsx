@@ -49,7 +49,7 @@ export function VideoGrid() {
         <SelfTile />
       </div>
       {remoteIds.map((id) => (
-        <div key={id} className="video-grid__cell">
+        <div key={id} className="video-grid__cell" data-participant-id={id}>
           <RemoteTile participantId={id} />
         </div>
       ))}

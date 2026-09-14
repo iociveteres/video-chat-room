@@ -1,3 +1,4 @@
+import { VIDEO_CONSTRAINTS } from '@vcr/shared';
 import { render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { installE2EHook, recordCreatedTracks } from '../src/app/e2eHook';
@@ -101,6 +102,9 @@ describe('installE2EHook', () => {
     peers.pcs.last.emitIceCandidate({ candidate: 'candidate:1', sdpMid: '0', sdpMLineIndex: 0 });
 
     expect(hook.peers.ids()).toEqual([maria.id]);
+    expect(hook.peers.summary()).toEqual([
+      { participantId: maria.id, role: 'answerer', status: 'connecting' },
+    ]);
     const counts = hook.debug.signalCounts();
     expect(counts).toEqual({ [maria.id]: { offer: 0, answer: 1, candidate: 1 } });
     counts[maria.id]!.offer = 99;
@@ -113,6 +117,7 @@ describe('installE2EHook', () => {
     expect(hook.debug.callConfig()).toMatchObject({
       rtc: { bundlePolicy: 'max-bundle', iceTransportPolicy: 'all' },
       connectTimeoutMs: 20_000,
+      videoConstraints: VIDEO_CONSTRAINTS,
     });
   });
 

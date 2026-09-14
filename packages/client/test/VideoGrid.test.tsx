@@ -123,6 +123,12 @@ describe('VideoGrid', () => {
 
     expect(t.labels()).toEqual(['Вы', 'Мария', 'Вера']);
     expect(t.grid()).toHaveAttribute('data-count', '3');
+    // E2E находит id участника по его плитке.
+    expect(
+      [...t.grid().querySelectorAll('[data-participant-id]')].map((cell) =>
+        cell.getAttribute('data-participant-id'),
+      ),
+    ).toEqual([maria.id, vera.id]);
     expect(t.video('Вы')).toBe(before.self);
     expect(t.video('Мария')).toBe(before.maria);
     expect(t.video('Вера')).toBe(before.vera);
