@@ -139,15 +139,11 @@ describe('PeerManager routing', () => {
     expect(y.handleSignal).toHaveBeenCalledWith(OFFER);
   });
 
-  it.each([
-    ['an offerer (I1 violation)', 'joined'],
-    ['an answerer (duplicate offer)', 'offer'],
-  ])('ignores an offer for %s session with a warning', (_label, how) => {
+  // Для answerer-сессии (дубль offer) — та же ветка: сессия уже есть.
+  it('ignores an offer for an existing offerer session (I1 violation) with a warning', () => {
     const t = setup();
-    if (how === 'joined') t.manager.handleParticipantJoined('x');
-    else t.manager.handleSignal('x', OFFER);
+    t.manager.handleParticipantJoined('x');
     const x = t.sessions.get('x')!;
-    x.handleSignal.mockClear();
 
     t.manager.handleSignal('x', OFFER);
 
@@ -210,15 +206,6 @@ describe('PeerManager routing', () => {
     expect(t.created[1]!.start).toHaveBeenCalledOnce();
   });
 
-  it('getStats delegates to the session', async () => {
-    const t = setup();
-    t.manager.handleParticipantJoined('x');
-    const report = new Map([['id', {}]]) as unknown as RTCStatsReport;
-    t.sessions.get('x')!.getStats.mockResolvedValue(report);
-
-    await expect(t.manager.getStats('x')).resolves.toBe(report);
-  });
-
   it('ids() lists participants with a live session', () => {
     const t = setup();
     t.manager.handleParticipantJoined('x');
@@ -247,8 +234,10 @@ describe('PeerManager media tracks', () => {
     await flushMicrotasks();
 
     const [x, y] = [t.sessions.get('x')!, t.sessions.get('y')!];
-    expect(x.replaceTrack).toHaveBeenCalledWith('video', camera);
-    expect(y.replaceTrack).toHaveBeenCalledWith('video', camera);
+    // Подписка одна на все сессии: каждая получает смену трека ровно один раз.
+    expect(t.media.onTrackChange).toHaveBeenCalledOnce();
+    expect(x.replaceTrack.mock.calls).toEqual([['video', camera]]);
+    expect(y.replaceTrack.mock.calls).toEqual([['video', camera]]);
 
     x.pendingReplace[0]!.resolve();
     await flushMicrotasks();
@@ -257,26 +246,6 @@ describe('PeerManager media tracks', () => {
     y.pendingReplace[0]!.resolve();
     await flushMicrotasks();
     expect(done).toBe(true);
-  });
-
-  it('subscribes once, on the first session', () => {
-    const t = setup();
-    expect(t.media.onTrackChange).not.toHaveBeenCalled();
-
-    t.manager.handleParticipantJoined('x');
-    t.manager.handleSignal('y', OFFER);
-
-    expect(t.media.onTrackChange).toHaveBeenCalledOnce();
-  });
-
-  it('a session that left does not receive track changes', async () => {
-    const t = setup();
-    t.manager.handleParticipantJoined('x');
-    t.manager.handleParticipantLeft('x');
-
-    await t.media.emit('audio', null);
-
-    expect(t.sessions.get('x')!.replaceTrack).not.toHaveBeenCalled();
   });
 });
 

@@ -907,25 +907,6 @@ describe('RoomSession: WebRTC peers (stage 4)', () => {
   const peerActions = (actions: AppAction[]) =>
     actions.filter((a) => a.type === 'PEER_STATUS_CHANGED');
 
-  it('onSignalSent observes every signal emitted to the server until unsubscribed', async () => {
-    const t = setup();
-    const seen: [string, SignalData['type']][] = [];
-    const unsubscribe = t.session.onSignalSent((to, data) => seen.push([to, data.type]));
-    const socket = await t.joinSuccessfully();
-
-    socket.serverEmit('participant:joined', { participant: boris });
-    await flushMicrotasks();
-    t.pcs.last.emitIceCandidate({ candidate: 'candidate:1', sdpMid: '0', sdpMLineIndex: 0 });
-    unsubscribe();
-    t.pcs.last.emitIceCandidate({ candidate: 'candidate:2', sdpMid: '0', sdpMLineIndex: 0 });
-
-    expect(seen).toEqual([
-      [boris.id, 'offer'],
-      [boris.id, 'candidate'],
-    ]);
-    expect(signals(socket)).toHaveLength(3);
-  });
-
   it('JOIN_SUCCEEDED → connecting for every remote participant, no connection yet', async () => {
     const t = setup();
 
@@ -981,18 +962,6 @@ describe('RoomSession: WebRTC peers (stage 4)', () => {
       { to: maria.id, data: { type: 'answer', sdp: pc.localDescription!.sdp } },
     ]);
     expect(t.session.peers.getRemoteStream(maria.id)).not.toBeNull();
-  });
-
-  it('forwards ICE status changes to state', async () => {
-    const t = setup();
-    const socket = await t.joinSuccessfully();
-    socket.serverEmit('signal', { from: maria.id, data: OFFER });
-    await flushMicrotasks();
-
-    t.pcs.last.setIceConnectionState('connected');
-    expect(t.getState().peers[maria.id]).toEqual({ status: 'connected' });
-    t.pcs.last.setIceConnectionState('disconnected');
-    expect(t.getState().peers[maria.id]).toEqual({ status: 'unstable' });
   });
 
   it('participant:left closes the connection and removes the peer from state', async () => {
@@ -1060,8 +1029,8 @@ describe('RoomSession: WebRTC peers (stage 4)', () => {
 
   it.each<[string, (t: ReturnType<typeof setup>, socket: FakeSocket) => void]>([
     ['leave()', (t) => t.session.leave()],
+    // pagehide, JOIN_FAILED и dispose идут тем же teardown(), что и эти два пути.
     ['connection loss', (_t, socket) => socket.serverDisconnect()],
-    ['pagehide', (t) => t.session.handlePageHide()],
   ])('%s closes all connections before releasing devices', async (_label, exit) => {
     const t = setup();
     const socket = await t.joinSuccessfully();

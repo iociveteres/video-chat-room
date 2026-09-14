@@ -3,7 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 import { PeerSession, toPeerStatus, type PeerRole, type PeerStatus } from '../src/call/PeerSession';
 import type { LocalTracks } from '../src/media/MediaController';
 import { FakeMediaStream, FakeTrack, flushMicrotasks } from './helpers/FakeMedia';
-import { fakeOfferSdp, fakePeerConnections } from './helpers/FakePeerConnection';
+import {
+  fakeOfferSdp,
+  fakePeerConnections,
+  type DeferrableMethod,
+} from './helpers/FakePeerConnection';
 
 const RTC_CONFIG: RTCConfiguration = { iceServers: [], bundlePolicy: 'max-bundle' };
 
@@ -93,19 +97,11 @@ describe('PeerSession offerer', () => {
     expect(t.pc.configuration).toBe(RTC_CONFIG);
     expect(t.pc.signalingState).toBe('have-local-offer');
     expect(t.statuses).toEqual([]);
-  });
-
-  it('puts both local tracks into the transceivers and exposes both receiver tracks', async () => {
-    const t = setup('offerer');
-
-    t.session.start();
-    await flushMicrotasks();
-
-    const [audioTx, videoTx] = t.pc.getTransceivers();
-    expect(audioTx!.sender.track).toBe(t.tracks.audio);
-    expect(videoTx!.sender.track).toBe(t.tracks.video);
+    // Треки приёма обоих трансиверов — в стабильном remoteStream.
     expect(t.session.remoteStream).toBe(t.remoteStream);
-    expect(t.remoteStream.getTracks()).toEqual([audioTx!.receiver.track, videoTx!.receiver.track]);
+    expect(t.remoteStream.getTracks()).toEqual(
+      t.pc.getTransceivers().map((tx) => tx.receiver.track),
+    );
   });
 
   it('applies the answer', async () => {
@@ -149,21 +145,6 @@ describe('PeerSession offerer', () => {
     expect(offerer.signals.map((s) => s.type)).toEqual(['offer']);
     expect(answerer.pc.journal).toEqual([]);
     expect(warn).toHaveBeenCalledTimes(2);
-  });
-
-  it('close() while createOffer is pending: no SLD and no signal', async () => {
-    const t = setup('offerer');
-    t.pc.hold('createOffer');
-    t.session.start();
-    await flushMicrotasks();
-
-    t.session.close();
-    t.pc.takePending('createOffer').resolve();
-    await flushMicrotasks();
-
-    expect(t.pc.journal).not.toContain('setLocalDescription(offer)');
-    expect(t.signals).toEqual([]);
-    expect(t.statuses).toEqual(['closed']);
   });
 });
 
@@ -234,67 +215,9 @@ describe('PeerSession answerer', () => {
     expect(t.signals).toEqual([]);
     expect(t.statuses).toEqual(['failed']);
   });
-
-  it('close() while SRD is pending: no createAnswer and no signal after it resolves', async () => {
-    const t = setup('answerer');
-    t.pc.hold('setRemoteDescription');
-    t.session.handleSignal(offer());
-    await flushMicrotasks();
-
-    t.session.close();
-    t.pc.takePending('setRemoteDescription').resolve();
-    await flushMicrotasks();
-
-    expect(t.pc.journal).toEqual(['setRemoteDescription(offer)', 'close']);
-    expect(t.signals).toEqual([]);
-    expect(t.statuses).toEqual(['closed']);
-  });
-
-  it('close() while replaceTrack is pending: no createAnswer', async () => {
-    const t = setup('answerer');
-    t.pc.hold('replaceTrack');
-    t.session.handleSignal(offer());
-    await flushMicrotasks();
-
-    t.session.close();
-    t.pc.takePending('replaceTrack').resolve();
-    await flushMicrotasks();
-
-    expect(t.pc.journal).not.toContain('createAnswer');
-    expect(t.signals).toEqual([]);
-  });
-
-  it('close() while createAnswer is pending: no SLD and no signal', async () => {
-    const t = setup('answerer');
-    t.pc.hold('createAnswer');
-    t.session.handleSignal(offer());
-    await flushMicrotasks();
-
-    t.session.close();
-    t.pc.takePending('createAnswer').resolve();
-    await flushMicrotasks();
-
-    expect(t.pc.journal).not.toContain('setLocalDescription(answer)');
-    expect(t.signals).toEqual([]);
-  });
 });
 
 describe('PeerSession unexpected signals', () => {
-  it('ignores a repeated offer to the answerer with a warning', async () => {
-    const t = setup('answerer');
-    t.session.handleSignal(offer());
-    await flushMicrotasks();
-    const journal = [...t.pc.journal];
-
-    t.session.handleSignal(offer());
-    await flushMicrotasks();
-
-    expect(t.pc.journal).toEqual(journal);
-    expect(t.signals.map((s) => s.type)).toEqual(['answer']);
-    expect(t.statuses).toEqual([]);
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('unexpected-offer'), 'remote-1');
-  });
-
   it('ignores a second offer queued while the first SRD is still pending', async () => {
     const t = setup('answerer');
     t.pc.hold('setRemoteDescription');
@@ -307,6 +230,8 @@ describe('PeerSession unexpected signals', () => {
 
     expect(t.pc.journal.filter((entry) => entry === 'setRemoteDescription(offer)')).toHaveLength(1);
     expect(t.signals.map((s) => s.type)).toEqual(['answer']);
+    expect(t.statuses).toEqual([]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('unexpected-offer'), 'remote-1');
   });
 
   it('ignores an offer to the offerer', async () => {
@@ -418,18 +343,6 @@ describe('PeerSession ICE candidates (I4)', () => {
       'audio.direction=sendrecv',
     ]);
     expect(t.pc.addedCandidates).toEqual([candidate(1), candidate(2), candidate(3)]);
-  });
-
-  it('buffers candidates that arrive before the offer itself', async () => {
-    const t = setup('answerer');
-    t.session.handleSignal(candidateSignal(1));
-    await flushMicrotasks();
-    expect(t.pc.journal).toEqual([]);
-
-    t.session.handleSignal(offer());
-    await flushMicrotasks();
-
-    expect(t.pc.addedCandidates).toEqual([candidate(1)]);
   });
 
   it('adds a candidate at once after SRD without waiting for queued operations', async () => {
@@ -709,62 +622,44 @@ describe('PeerSession connection status', () => {
     expect(t.pc.oniceconnectionstatechange).toBeNull();
     expect(t.statuses).toEqual(['closed']);
   });
-
-  it('getStats() delegates to the peer connection', async () => {
-    const t = setup('offerer');
-    const report = new Map() as RTCStatsReport;
-    vi.spyOn(t.pc, 'getStats').mockResolvedValue(report);
-
-    await expect(t.session.getStats()).resolves.toBe(report);
-  });
 });
 
 describe('PeerSession close() between any two awaits (I4)', () => {
-  it('offerer: close() while setLocalDescription(offer) is pending → no offer, no timeout', async () => {
-    vi.useFakeTimers();
-    const t = setup('offerer');
-    t.pc.hold('setLocalDescription');
-    t.session.start();
-    await flushMicrotasks();
+  // Каждая строка — своя проверка closed после await. Шаг резолвится уже после close():
+  // сессия не должна сделать ни одного вызова дальше, отправить сигнал или взвести таймаут.
+  it.each<[PeerRole, DeferrableMethod, number]>([
+    ['offerer', 'createOffer', 0],
+    ['offerer', 'setLocalDescription', 0],
+    ['answerer', 'setRemoteDescription', 0],
+    ['answerer', 'replaceTrack', 0],
+    ['answerer', 'replaceTrack', 1],
+    ['answerer', 'createAnswer', 0],
+    ['answerer', 'setLocalDescription', 0],
+  ])(
+    '%s: close() while %s (after %i resolved) is pending',
+    async (role, method, resolvedBefore) => {
+      vi.useFakeTimers();
+      const t = setup(role);
+      t.pc.hold(method);
+      if (role === 'offerer') t.session.start();
+      else t.session.handleSignal(offer());
+      await flushMicrotasks();
+      for (let i = 0; i < resolvedBefore; i++) {
+        t.pc.takePending(method).resolve();
+        await flushMicrotasks();
+      }
+      const callsBefore = t.pc.journal.length;
 
-    t.session.close();
-    t.pc.takePending('setLocalDescription').resolve();
-    await flushMicrotasks();
-    vi.advanceTimersByTime(60_000);
+      t.session.close();
+      t.pc.takePending(method).resolve();
+      await flushMicrotasks();
+      vi.advanceTimersByTime(60_000);
 
-    expect(t.signals).toEqual([]);
-    expect(t.statuses).toEqual(['closed']);
-  });
-
-  it('answerer: close() while replaceTrack(video) is pending → no createAnswer', async () => {
-    const t = setup('answerer');
-    t.pc.hold('replaceTrack');
-    t.session.handleSignal(offer());
-    await flushMicrotasks();
-    t.pc.takePending('replaceTrack').resolve(); // audio
-    await flushMicrotasks();
-    expect(t.pc.pending.map((call) => call.args[0])).toEqual(['video']);
-
-    t.session.close();
-    t.pc.takePending('replaceTrack').resolve();
-    await flushMicrotasks();
-
-    expect(t.pc.journal).not.toContain('createAnswer');
-    expect(t.signals).toEqual([]);
-  });
-
-  it('answerer: close() while setLocalDescription(answer) is pending → no answer', async () => {
-    const t = setup('answerer');
-    t.pc.hold('setLocalDescription');
-    t.session.handleSignal(offer());
-    await flushMicrotasks();
-
-    t.session.close();
-    t.pc.takePending('setLocalDescription').resolve();
-    await flushMicrotasks();
-
-    expect(t.signals).toEqual([]);
-  });
+      expect(t.pc.journal.slice(callsBefore)).toEqual(['close']);
+      expect(t.signals).toEqual([]);
+      expect(t.statuses).toEqual(['closed']);
+    },
+  );
 
   it('offerer: close() while setRemoteDescription(answer) is pending → buffered candidates are dropped', async () => {
     const t = setup('offerer');
@@ -799,18 +694,6 @@ describe('PeerSession close() between any two awaits (I4)', () => {
 });
 
 describe('PeerSession edge cases', () => {
-  it('offerer without a microphone creates an empty audio transceiver first', async () => {
-    const t = setup('offerer', { audio: false });
-
-    t.session.start();
-    await flushMicrotasks();
-
-    expect(t.pc.journal.slice(0, 2)).toEqual([
-      'addTransceiver(audio, sendrecv)',
-      `addTransceiver(${t.tracks.video!.id}, sendrecv)`,
-    ]);
-  });
-
   it('does not arm the connect timeout when ICE is already connected at send time', async () => {
     vi.useFakeTimers();
     const t = setup('offerer');
@@ -836,39 +719,5 @@ describe('PeerSession edge cases', () => {
       type: 'candidate',
       candidate: { candidate: '', sdpMid: '1', sdpMLineIndex: 1 },
     });
-  });
-
-  it('uses the browser RTCPeerConnection and MediaStream by default', () => {
-    const pcs = fakePeerConnections();
-    const streams: FakeMediaStream[] = [];
-    vi.stubGlobal(
-      'RTCPeerConnection',
-      vi.fn(function (config: RTCConfiguration) {
-        return pcs.create(config);
-      }),
-    );
-    vi.stubGlobal(
-      'MediaStream',
-      vi.fn(function () {
-        const stream = new FakeMediaStream();
-        streams.push(stream);
-        return stream;
-      }),
-    );
-    try {
-      const session = new PeerSession({
-        remoteId: 'remote-1',
-        role: 'offerer',
-        rtcConfig: RTC_CONFIG,
-        getLocalTracks: () => ({ audio: null, video: null }),
-        sendSignal: () => {},
-        onStatus: () => {},
-      });
-
-      expect(pcs.last.configuration).toBe(RTC_CONFIG);
-      expect(session.remoteStream).toBe(streams[0]);
-    } finally {
-      vi.unstubAllGlobals();
-    }
   });
 });

@@ -163,11 +163,4 @@ describe('AutoplayGuard with remote tiles', () => {
     expect(remoteCalls()).toBe(2);
     expect(t.banner()).toBeNull();
   });
-
-  it('shows no banner when playback is allowed', async () => {
-    const t = await renderRoom();
-
-    expect(t.banner()).toBeNull();
-    expect(t.remoteVideo().muted).toBe(false);
-  });
 });

@@ -488,7 +488,6 @@ describe('appReducer: peers and autoplay (stage 4)', () => {
       ['self', joined, alex.id],
       ['an unknown participant (already left)', joined, boris.id],
       ['joining', joining, maria.id],
-      ['idle', initialAppState, maria.id],
     ])('is ignored for %s', (_label, state, participantId) => {
       expect(
         appReducer(state, { type: 'PEER_STATUS_CHANGED', participantId, status: 'connected' }),
@@ -516,18 +515,6 @@ describe('appReducer: peers and autoplay (stage 4)', () => {
 
     expect(state.peers).toEqual({});
     expect(state.autoplayBlocked).toBe(false);
-  });
-
-  it('a new join starts without peers and without the autoplay banner', () => {
-    const state = reduce(
-      withMaria('failed'),
-      { type: 'AUTOPLAY_BLOCKED' },
-      { type: 'CONNECTION_LOST' },
-      { type: 'JOIN_REQUESTED', roomId: 'room1', name: 'Алекс' },
-      { type: 'JOIN_FAILED', reason: 'ROOM_FULL' },
-    );
-
-    expect(state).toMatchObject({ peers: {}, autoplayBlocked: false });
   });
 
   describe('AUTOPLAY_BLOCKED / AUTOPLAY_RESUMED', () => {

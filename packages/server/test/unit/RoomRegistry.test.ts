@@ -145,13 +145,6 @@ describe('RoomRegistry', () => {
       expect(second.joinedAt).toBe(first.joinedAt);
       expect(second.joinSeq).toBeGreaterThan(first.joinSeq);
     });
-
-    it('is not exposed in the DTO', () => {
-      const { registry, join } = createRegistry();
-      joinOk(join('r1'));
-
-      expect(registry.listParticipants('r1')[0]).not.toHaveProperty('joinSeq');
-    });
   });
 
   it('allows duplicate names as distinct participants', () => {

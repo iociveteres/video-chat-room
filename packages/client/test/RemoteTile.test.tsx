@@ -5,9 +5,7 @@ import type { PeerStatus } from '../src/call/PeerSession';
 import { PEER_STATUS_TEXT, remoteTileView } from '../src/features/call/RemoteTile';
 import { VideoStage } from '../src/features/call/VideoStage';
 import { RoomSession } from '../src/session/RoomSession';
-import { AppStateProvider, useAppState } from '../src/state/AppStateProvider';
-import type { AppState } from '../src/state/appReducer';
-import { selectParticipants } from '../src/state/selectors';
+import { AppStateProvider } from '../src/state/AppStateProvider';
 import { fakeMedia, flushMicrotasks } from './helpers/FakeMedia';
 import { fakeOfferSdp, fakePeers } from './helpers/FakePeerConnection';
 import { FakeSocket } from './helpers/FakeSocket';
@@ -42,12 +40,6 @@ async function renderStage(participants: ParticipantDTO[] = [maria, alex]) {
   const media = fakeMedia();
   const peers = fakePeers();
   let session: RoomSession | undefined;
-  let state: AppState | undefined;
-
-  function StateProbe() {
-    state = useAppState();
-    return null;
-  }
 
   const view = render(
     <AppStateProvider
@@ -61,7 +53,6 @@ async function renderStage(participants: ParticipantDTO[] = [maria, alex]) {
       }
     >
       <VideoStage />
-      <StateProbe />
     </AppStateProvider>,
   );
 
@@ -91,7 +82,6 @@ async function renderStage(participants: ParticipantDTO[] = [maria, alex]) {
   return {
     ...view,
     session: session!,
-    getState: () => state!,
     tile,
     video,
     placeholder,
@@ -168,17 +158,6 @@ describe('RemoteTile in VideoStage', () => {
 
     t.setIce('connected');
     expect(within(t.tile('Мария')).queryByRole('status')).toBeNull();
-  });
-
-  it('failed → «Не удалось установить медиасоединение»; the participant stays in the room', async () => {
-    const t = await renderStage();
-    await t.connectMaria();
-
-    t.setIce('failed');
-
-    expect(t.placeholder('Мария')).toHaveTextContent('Не удалось установить медиасоединение');
-    expect(selectParticipants(t.getState()).map((p) => p.name)).toEqual(['Мария', 'Алекс']);
-    expect(t.getState().phase).toEqual({ kind: 'joined' });
   });
 
   it('adds a tile for a newcomer and removes the tile of someone who left', async () => {

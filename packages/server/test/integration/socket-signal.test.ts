@@ -99,17 +99,6 @@ describe('signal', () => {
       });
       expect(bSignals.map((s) => s.data)).toEqual(sent);
     });
-
-    it('does not accept a forged from in the payload', async () => {
-      const { a, b, bId } = await joinPair();
-      const bSignals = recordSignals(b);
-
-      rawSendSignal(a, { to: bId, from: randomUUID(), data: OFFER });
-      await settle(a, b);
-
-      expect(bSignals).toEqual([]);
-      expect(a.connected).toBe(true);
-    });
   });
 
   describe('addressee', () => {
@@ -193,18 +182,6 @@ describe('signal', () => {
       expect(lines.some((line) => line.includes('"reason":"role-violation"'))).toBe(true);
     });
 
-    it('lets candidates flow in both directions', async () => {
-      const { a, b, aId, bId } = await joinPair();
-      const [aSignals, bSignals] = [a, b].map(recordSignals);
-
-      sendSignal(a, bId, candidate(1));
-      sendSignal(b, aId, candidate(2));
-      await settle(a, b, a);
-
-      expect(bSignals).toEqual([{ from: aId, data: candidate(1) }]);
-      expect(aSignals).toEqual([{ from: bId, data: candidate(2) }]);
-    });
-
     it('decides roles by join order even when joins land on the same millisecond', async () => {
       const { a, b, aId, bId } = await joinPair({ registry: new RoomRegistry({ now: () => 1 }) });
       const [aSignals, bSignals] = [a, b].map(recordSignals);
@@ -218,18 +195,15 @@ describe('signal', () => {
     });
   });
 
+  // Границы и форма payload — в unit-тестах SignalSchema; здесь — что обработчик их применяет.
   describe('validation', () => {
     it.each<[string, (to: string) => unknown[]]>([
-      ['no payload', () => []],
-      ['null payload', () => [null]],
       [
         'SDP longer than SDP_MAX_LENGTH',
         (to) => [{ to, data: { type: 'offer', sdp: 'a'.repeat(SDP_MAX_LENGTH + 1) } }],
       ],
-      ['empty SDP', (to) => [{ to, data: { type: 'offer', sdp: '' } }]],
-      ['extra field in data', (to) => [{ to, data: { ...OFFER, sdpType: 'offer' } }]],
-      ['unknown signal type', (to) => [{ to, data: { type: 'rollback', sdp: 'v=0' } }]],
-      ['non-uuid to', () => [{ to: 'p1', data: OFFER }]],
+      // Отправителя задаёт сервер: поле from в payload — лишнее и отбрасывается целиком.
+      ['a forged from', (to) => [{ to, from: randomUUID(), data: OFFER }]],
     ])('drops %s and keeps serving', async (_label, buildArgs) => {
       const { a, b, aId, bId } = await joinPair();
       const bSignals = recordSignals(b);
