@@ -136,3 +136,10 @@ dist
 .pnp.*
 
 prd-video-chat-room.md
+
+# Playwright
+playwright-report/
+test-results/
+
+# Local TLS certificates (dev / mkcert)
+*.pem
