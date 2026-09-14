@@ -261,10 +261,18 @@ describe('signal', () => {
         SIGNAL_RATE_LIMIT.burst + Math.ceil(elapsedSec * SIGNAL_RATE_LIMIT.refillPerSecond);
       expect(bSignals.length).toBeGreaterThanOrEqual(SIGNAL_RATE_LIMIT.burst);
       expect(bSignals.length).toBeLessThanOrEqual(ceiling);
-      // Доставленные — префикс отправленных, без перестановок.
-      expect(bSignals.map((s) => s.data)).toEqual(
-        Array.from({ length: bSignals.length }, (_, i) => candidate(i)),
+      // Первые burst доставлены подряд; токены, пополненные посреди потока, пропускают более
+      // поздние сигналы — порядок при этом только возрастает, без перестановок.
+      const sentIndex = (data: SignalData) =>
+        data.type === 'candidate'
+          ? Number(/^candidate:(\d+) /.exec(data.candidate.candidate)![1])
+          : -1;
+      const delivered = bSignals.map((s) => sentIndex(s.data));
+      expect(delivered.slice(0, SIGNAL_RATE_LIMIT.burst)).toEqual(
+        Array.from({ length: SIGNAL_RATE_LIMIT.burst }, (_, i) => i),
       );
+      expect(delivered).toEqual([...delivered].sort((x, y) => x - y));
+      expect(new Set(delivered).size).toBe(delivered.length);
       expect(lines.some((line) => line.includes('"reason":"rate-limited"'))).toBe(true);
     });
 
