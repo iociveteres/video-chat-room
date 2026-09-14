@@ -5,6 +5,7 @@ import {
   type JoinAck,
   type MediaState,
   type ServerErrorCode,
+  type SignalData,
 } from '@vcr/shared';
 import type { Dispatch } from 'react';
 import { PeerManager, type PeerManagerDeps } from '../call/PeerManager';
@@ -113,6 +114,8 @@ export class RoomSession {
   private pendingJoin: { roomId: string; name: string } | null = null;
   /** Последнее отправленное серверу состояние mic/cam (в room:join или media:update). */
   private lastSentMedia: MediaState | null = null;
+  /** Наблюдатели исходящих сигналов (E2E-хук считает offer/answer/candidate). */
+  private readonly signalListeners = new Set<(to: string, data: SignalData) => void>();
 
   constructor(deps: RoomSessionDeps) {
     this.dispatch = deps.dispatch;
@@ -133,12 +136,23 @@ export class RoomSession {
       rtcConfig: getRtcConfiguration(),
       connectTimeoutMs: getPeerConnectTimeoutMs(),
       sendSignal: (to, data) => {
-        if (this.status === 'joined') this.socket?.emit('signal', { to, data });
+        const socket = this.socket;
+        if (this.status !== 'joined' || !socket) return;
+        socket.emit('signal', { to, data });
+        for (const listener of this.signalListeners) listener(to, data);
       },
       onPeerStatus: (participantId, status) =>
         this.dispatch({ type: 'PEER_STATUS_CHANGED', participantId, status }),
       onNotice: (text) => this.dispatch({ type: 'NOTICE_SHOWN', text, tone: 'error' }),
     });
+  }
+
+  /** Подписка на отправленные сигналы; возвращает отписку. */
+  onSignalSent(listener: (to: string, data: SignalData) => void): () => void {
+    this.signalListeners.add(listener);
+    return () => {
+      this.signalListeners.delete(listener);
+    };
   }
 
   /** Комната последней попытки входа (в том числе неудачной); null после выхода. */

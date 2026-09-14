@@ -13,12 +13,25 @@ export interface CreatedTrackSnapshot {
   readyState: MediaStreamTrackState;
 }
 
+export type SignalCounts = Record<string, { offer: number; answer: number; candidate: number }>;
+
 export interface VcrE2EHook {
   media: {
     /** Живые объекты треков controller'а — E2E может, например, послать им 'ended'. */
     getTracks(): LocalTracks;
     /** Все треки, выданные getUserMedia за жизнь вкладки, включая остановленные. */
     debugCreatedTracks(): CreatedTrackSnapshot[];
+  };
+  /** Этап 4 (TDD §11.4). */
+  peers: {
+    /** Участники, с которыми сейчас есть медиасоединение. */
+    ids(): string[];
+    /** Отчёт getStats() массивом словарей — сериализуем для page.evaluate; null без сессии. */
+    getStats(participantId: string): Promise<RTCStats[] | null>;
+  };
+  debug: {
+    /** Отправленные сигналы по адресатам за жизнь вкладки: проверка «ровно один offer». */
+    signalCounts(): SignalCounts;
   };
 }
 
@@ -58,15 +71,32 @@ export function installE2EHook(
   mediaDevices: MediaDevicesLike | undefined = win.navigator.mediaDevices,
 ): () => void {
   const tracks = mediaDevices ? recordCreatedTracks(mediaDevices) : [];
+  const counts: SignalCounts = {};
+  const unsubscribe = session.onSignalSent((to, data) => {
+    counts[to] ??= { offer: 0, answer: 0, candidate: 0 };
+    counts[to][data.type] += 1;
+  });
   const hook: VcrE2EHook = {
     media: {
       getTracks: () => session.media.getTracks(),
       debugCreatedTracks: () =>
         tracks.map(({ id, kind, readyState }) => ({ id, kind, readyState })),
     },
+    peers: {
+      ids: () => session.peers.ids(),
+      getStats: async (participantId) => {
+        const report = await session.peers.getStats(participantId);
+        return report ? [...report.values()] : null;
+      },
+    },
+    debug: {
+      signalCounts: () =>
+        Object.fromEntries(Object.entries(counts).map(([id, count]) => [id, { ...count }])),
+    },
   };
   win.__vcr = hook;
   return () => {
+    unsubscribe();
     if (win.__vcr === hook) delete win.__vcr;
   };
 }

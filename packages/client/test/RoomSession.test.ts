@@ -907,6 +907,25 @@ describe('RoomSession: WebRTC peers (stage 4)', () => {
   const peerActions = (actions: AppAction[]) =>
     actions.filter((a) => a.type === 'PEER_STATUS_CHANGED');
 
+  it('onSignalSent observes every signal emitted to the server until unsubscribed', async () => {
+    const t = setup();
+    const seen: [string, SignalData['type']][] = [];
+    const unsubscribe = t.session.onSignalSent((to, data) => seen.push([to, data.type]));
+    const socket = await t.joinSuccessfully();
+
+    socket.serverEmit('participant:joined', { participant: boris });
+    await flushMicrotasks();
+    t.pcs.last.emitIceCandidate({ candidate: 'candidate:1', sdpMid: '0', sdpMLineIndex: 0 });
+    unsubscribe();
+    t.pcs.last.emitIceCandidate({ candidate: 'candidate:2', sdpMid: '0', sdpMLineIndex: 0 });
+
+    expect(seen).toEqual([
+      [boris.id, 'offer'],
+      [boris.id, 'candidate'],
+    ]);
+    expect(signals(socket)).toHaveLength(3);
+  });
+
   it('JOIN_SUCCEEDED → connecting for every remote participant, no connection yet', async () => {
     const t = setup();
 

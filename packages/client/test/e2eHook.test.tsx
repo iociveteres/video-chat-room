@@ -4,13 +4,19 @@ import { installE2EHook, recordCreatedTracks } from '../src/app/e2eHook';
 import { RoomSession } from '../src/session/RoomSession';
 import { AppStateProvider } from '../src/state/AppStateProvider';
 import { fakeMedia, FakeMediaDevices, flushMicrotasks } from './helpers/FakeMedia';
+import { fakeOfferSdp, fakePeers } from './helpers/FakePeerConnection';
 import { FakeSocket } from './helpers/FakeSocket';
 
-function createSession(devices = new FakeMediaDevices()) {
+function createSession(
+  devices = new FakeMediaDevices(),
+  socket = new FakeSocket(),
+  peers = fakePeers(),
+) {
   return new RoomSession({
     dispatch: () => {},
-    createSocket: () => new FakeSocket().asSocket(),
+    createSocket: () => socket.asSocket(),
     createMedia: fakeMedia(devices).createMedia,
+    createPeers: peers.createPeers,
   });
 }
 
@@ -73,6 +79,55 @@ describe('installE2EHook', () => {
     expect(JSON.parse(JSON.stringify(hook.media.debugCreatedTracks()))).toEqual(
       hook.media.debugCreatedTracks(),
     );
+  });
+
+  it('exposes peer ids, serializable stats and signal counts per addressee', async () => {
+    const socket = new FakeSocket();
+    const peers = fakePeers();
+    const session = createSession(new FakeMediaDevices(), socket, peers);
+    installE2EHook(session, window, undefined);
+    const hook = window.__vcr!;
+
+    session.join('room1', 'Алекс');
+    await flushMicrotasks();
+    socket.serverConnect();
+    const self = { id: 'p-alex', name: 'Алекс', joinedAt: 1, media: { audio: true, video: true } };
+    const maria = { ...self, id: 'p-maria', name: 'Мария', joinedAt: 0 };
+    socket
+      .lastEmitted('room:join')
+      .respond({ ok: true, self, participants: [maria, self], messages: [] });
+    socket.serverEmit('signal', { from: maria.id, data: { type: 'offer', sdp: fakeOfferSdp() } });
+    await flushMicrotasks();
+    peers.pcs.last.emitIceCandidate({ candidate: 'candidate:1', sdpMid: '0', sdpMLineIndex: 0 });
+
+    expect(hook.peers.ids()).toEqual([maria.id]);
+    const counts = hook.debug.signalCounts();
+    expect(counts).toEqual({ [maria.id]: { offer: 0, answer: 1, candidate: 1 } });
+    counts[maria.id]!.offer = 99;
+    expect(hook.debug.signalCounts()[maria.id]!.offer).toBe(0);
+
+    const stat = { id: 'in-1', type: 'inbound-rtp', timestamp: 1 } as RTCStats;
+    vi.spyOn(peers.pcs.last, 'getStats').mockResolvedValue(new Map([[stat.id, stat]]));
+    await expect(hook.peers.getStats(maria.id)).resolves.toEqual([stat]);
+    await expect(hook.peers.getStats('nobody')).resolves.toBeNull();
+  });
+
+  it('stops counting signals after cleanup', async () => {
+    const socket = new FakeSocket();
+    const session = createSession(new FakeMediaDevices(), socket);
+    const uninstall = installE2EHook(session, window, undefined);
+    const hook = window.__vcr!;
+    uninstall();
+
+    session.join('room1', 'Алекс');
+    await flushMicrotasks();
+    socket.serverConnect();
+    const self = { id: 'p-alex', name: 'Алекс', joinedAt: 1, media: { audio: true, video: true } };
+    socket.lastEmitted('room:join').respond({ ok: true, self, participants: [self], messages: [] });
+    socket.serverEmit('participant:joined', { participant: { ...self, id: 'p-boris' } });
+    await flushMicrotasks();
+
+    expect(hook.debug.signalCounts()).toEqual({});
   });
 
   it('works without mediaDevices and removes itself on cleanup', () => {

@@ -218,6 +218,19 @@ describe('PeerManager routing', () => {
 
     await expect(t.manager.getStats('x')).resolves.toBe(report);
   });
+
+  it('ids() lists participants with a live session', () => {
+    const t = setup();
+    t.manager.handleParticipantJoined('x');
+    t.manager.handleSignal('y', OFFER);
+    expect(t.manager.ids()).toEqual(['x', 'y']);
+
+    t.manager.handleParticipantLeft('x');
+    expect(t.manager.ids()).toEqual(['y']);
+
+    t.manager.closeAll();
+    expect(t.manager.ids()).toEqual([]);
+  });
 });
 
 describe('PeerManager media tracks', () => {

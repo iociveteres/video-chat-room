@@ -68,6 +68,11 @@ export class PeerManager {
     session.close();
   }
 
+  /** Участники, с которыми сейчас есть сессия (диагностика и E2E). */
+  ids(): string[] {
+    return [...this.sessions.keys()];
+  }
+
   getRemoteStream(participantId: string): MediaStream | null {
     return this.sessions.get(participantId)?.remoteStream ?? null;
   }

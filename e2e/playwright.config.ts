@@ -42,7 +42,13 @@ export default defineConfig({
         channel: process.env.PW_CHANNEL,
         launchOptions: {
           // Фейковые камера и микрофон, запрос разрешения подтверждается автоматически.
-          args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
+          // Без mDNS host-кандидаты — обычные IP: звонок между контекстами идёт по loopback
+          // без резолва *.local (TDD этапа 4 §11.4).
+          args: [
+            '--use-fake-ui-for-media-stream',
+            '--use-fake-device-for-media-stream',
+            '--disable-features=WebRtcHideLocalIpsWithMdns',
+          ],
         },
       },
     },
