@@ -4,6 +4,7 @@ import type {
   ChatSendAck,
   ClientToServerEvents,
   JoinAck,
+  MediaState,
   ParticipantDTO,
   ServerToClientEvents,
 } from '@vcr/shared';
@@ -42,14 +43,27 @@ export function disconnectAll(): void {
   openClients.clear();
 }
 
-export function join(client: TestClient, roomId: string, name = 'Тест'): Promise<JoinAck> {
+/** Начальное media в room:join, если тесту не важно конкретное значение. */
+export const DEFAULT_MEDIA: MediaState = { audio: true, video: true };
+
+export function join(
+  client: TestClient,
+  roomId: string,
+  name = 'Тест',
+  media: MediaState = DEFAULT_MEDIA,
+): Promise<JoinAck> {
   return new Promise((resolve) => {
-    client.emit('room:join', { roomId, name }, resolve);
+    client.emit('room:join', { roomId, name, media }, resolve);
   });
 }
 
-export async function joinOk(client: TestClient, roomId: string, name = 'Тест') {
-  const res = await join(client, roomId, name);
+export async function joinOk(
+  client: TestClient,
+  roomId: string,
+  name = 'Тест',
+  media: MediaState = DEFAULT_MEDIA,
+) {
+  const res = await join(client, roomId, name, media);
   if (!res.ok) throw new Error(`join failed: ${res.error.code}`);
   return res;
 }
@@ -76,6 +90,27 @@ export function rawSendChat(client: TestClient, payload: unknown): Promise<ChatS
   return new Promise((resolve) => {
     (client as unknown as RawEmitter).emit('chat:send', payload, resolve);
   });
+}
+
+export function updateMedia(client: TestClient, media: MediaState): void {
+  client.emit('media:update', media);
+}
+
+/** media:update с произвольными аргументами — для заведомо невалидных payload. */
+export function rawUpdateMedia(client: TestClient, ...args: unknown[]): void {
+  (client as unknown as RawEmitter).emit('media:update', ...args);
+}
+
+export interface RecordedMedia {
+  participantId: string;
+  media: MediaState;
+}
+
+/** Записывает participant:media клиента в порядке получения. */
+export function recordMedia(client: TestClient): RecordedMedia[] {
+  const events: RecordedMedia[] = [];
+  client.on('participant:media', (e) => events.push(e));
+  return events;
 }
 
 /** Записывает chat:message клиента в порядке получения. */

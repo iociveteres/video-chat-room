@@ -5,6 +5,7 @@ import { NOTICE_DISMISS_MS, NoticeToast } from '../src/features/notice/NoticeToa
 import { RoomSession } from '../src/session/RoomSession';
 import type { AppAction } from '../src/state/actions';
 import { AppStateProvider } from '../src/state/AppStateProvider';
+import { fakeMedia } from './helpers/FakeMedia';
 import { FakeSocket } from './helpers/FakeSocket';
 
 function renderToast() {
@@ -14,7 +15,11 @@ function renderToast() {
     <AppStateProvider
       createSession={(d) => {
         dispatch = d;
-        return new RoomSession({ dispatch: d, createSocket: () => socket.asSocket() });
+        return new RoomSession({
+          dispatch: d,
+          createSocket: () => socket.asSocket(),
+          createMedia: fakeMedia().createMedia,
+        });
       }}
     >
       <NoticeToast />
@@ -26,7 +31,7 @@ function renderToast() {
     dispatch!({ type: 'JOIN_REQUESTED', roomId: 'room1', name: 'Алекс' });
     dispatch!({
       type: 'JOIN_SUCCEEDED',
-      self: { id: 'p1', name: 'Алекс', joinedAt: 1 },
+      self: { id: 'p1', name: 'Алекс', joinedAt: 1, media: { audio: false, video: false } },
       participants: [],
       messages: [],
     });

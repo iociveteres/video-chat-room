@@ -2,11 +2,31 @@ import type { ParticipantDTO } from '@vcr/shared';
 import { describe, expect, it } from 'vitest';
 import type { AppAction, JoinFailure } from '../src/state/actions';
 import { appReducer, initialAppState, type AppState } from '../src/state/appReducer';
-import { selectIsSelf, selectParticipants, selectSelf } from '../src/state/selectors';
+import {
+  selectIsSelf,
+  selectParticipantMedia,
+  selectParticipants,
+  selectSelf,
+} from '../src/state/selectors';
 
-const alex: ParticipantDTO = { id: 'p-alex', name: 'Алекс', joinedAt: 1_000 };
-const maria: ParticipantDTO = { id: 'p-maria', name: 'Мария', joinedAt: 2_000 };
-const boris: ParticipantDTO = { id: 'p-boris', name: 'Борис', joinedAt: 3_000 };
+const alex: ParticipantDTO = {
+  id: 'p-alex',
+  name: 'Алекс',
+  joinedAt: 1_000,
+  media: { audio: false, video: false },
+};
+const maria: ParticipantDTO = {
+  id: 'p-maria',
+  name: 'Мария',
+  joinedAt: 2_000,
+  media: { audio: false, video: false },
+};
+const boris: ParticipantDTO = {
+  id: 'p-boris',
+  name: 'Борис',
+  joinedAt: 3_000,
+  media: { audio: false, video: false },
+};
 
 function reduce(state: AppState, ...actions: AppAction[]): AppState {
   return actions.reduce(appReducer, state);
@@ -27,22 +47,25 @@ describe('appReducer', () => {
         displayName: null,
         roomId: null,
         phase: { kind: 'idle' },
+        joinStep: null,
         selfId: null,
         participantIds: [],
         participantsById: {},
         chat: { messages: [], messageIds: {} },
         notice: null,
+        localMedia: { audio: 'off', video: 'off', videoTrackVersion: 0 },
       });
     });
   });
 
   describe('JOIN_REQUESTED', () => {
-    it('idle → joining, remembers the name and the room', () => {
+    it('idle → joining at the acquiring-media step, remembers the name and the room', () => {
       expect(joining).toEqual({
         ...initialAppState,
         displayName: 'Алекс',
         roomId: 'room1',
         phase: { kind: 'joining' },
+        joinStep: 'acquiring-media',
       });
     });
 
@@ -52,6 +75,7 @@ describe('appReducer', () => {
     ])('%s → joining («Повторить вход» / «Войти снова»)', (_label, state) => {
       const next = appReducer(state, { type: 'JOIN_REQUESTED', roomId: 'room1', name: 'Алекс' });
       expect(next.phase).toEqual({ kind: 'joining' });
+      expect(next.joinStep).toBe('acquiring-media');
       expect(next.participantIds).toEqual([]);
     });
 
@@ -63,18 +87,45 @@ describe('appReducer', () => {
     });
   });
 
+  describe('JOIN_CONNECTING', () => {
+    it('joining: acquiring-media → connecting', () => {
+      const next = appReducer(joining, { type: 'JOIN_CONNECTING' });
+      expect(next).toEqual({ ...joining, joinStep: 'connecting' });
+      expect(appReducer(next, { type: 'JOIN_CONNECTING' })).toBe(next);
+    });
+
+    it.each<[string, AppState]>([
+      ['idle', initialAppState],
+      ['joined', joined],
+      ['failed', reduce(joining, { type: 'JOIN_FAILED', reason: 'ROOM_FULL' })],
+    ])('is ignored in %s', (_label, state) => {
+      expect(appReducer(state, { type: 'JOIN_CONNECTING' })).toBe(state);
+    });
+  });
+
   describe('JOIN_SUCCEEDED', () => {
     it('joining → joined with self and participants in server order', () => {
       expect(joined).toEqual({
         displayName: 'Алекс',
         roomId: 'room1',
         phase: { kind: 'joined' },
+        joinStep: null,
         selfId: alex.id,
         participantIds: [maria.id, alex.id],
         participantsById: { [maria.id]: maria, [alex.id]: alex },
         chat: { messages: [], messageIds: {} },
         notice: null,
+        localMedia: { audio: 'off', video: 'off', videoTrackVersion: 0 },
       });
+    });
+
+    it('clears the join step after connecting', () => {
+      const next = reduce(
+        joining,
+        { type: 'JOIN_CONNECTING' },
+        { type: 'JOIN_SUCCEEDED', self: alex, participants: [alex], messages: [] },
+      );
+      expect(next.joinStep).toBeNull();
     });
 
     it('adds self if the server list does not contain it', () => {
@@ -246,11 +297,159 @@ describe('appReducer', () => {
       displayName: 'Алекс',
       roomId: 'room2',
       phase: { kind: 'joining' },
+      joinStep: 'acquiring-media',
     });
   });
 
   it('keeps state serializable', () => {
-    expect(JSON.parse(JSON.stringify(joined))).toEqual(joined);
+    const withMedia = reduce(
+      joined,
+      { type: 'LOCAL_MEDIA_STATUS_CHANGED', kind: 'video', status: 'busy' },
+      { type: 'LOCAL_VIDEO_TRACK_CHANGED' },
+    );
+    expect(JSON.parse(JSON.stringify(withMedia))).toEqual(withMedia);
+  });
+
+  describe('NOTICE_SHOWN', () => {
+    it('shows the notice in any phase; a repeated text is a new notice', () => {
+      const first = appReducer(initialAppState, {
+        type: 'NOTICE_SHOWN',
+        text: 'Камера занята',
+        tone: 'error',
+      });
+      const second = appReducer(first, {
+        type: 'NOTICE_SHOWN',
+        text: 'Камера занята',
+        tone: 'error',
+      });
+
+      expect(first.notice).toMatchObject({ text: 'Камера занята', tone: 'error' });
+      expect(second.notice?.id).toBe((first.notice?.id ?? 0) + 1);
+    });
+  });
+
+  describe('join step on failures', () => {
+    it.each<[string, AppAction]>([
+      ['JOIN_FAILED', { type: 'JOIN_FAILED', reason: 'ROOM_FULL' }],
+      ['LEFT_ROOM', { type: 'LEFT_ROOM' }],
+    ])('%s during connecting clears the step', (_label, action) => {
+      const next = reduce(joining, { type: 'JOIN_CONNECTING' }, action);
+      expect(next.joinStep).toBeNull();
+    });
+  });
+
+  describe('LOCAL_MEDIA_STATUS_CHANGED', () => {
+    it('updates the status of one device', () => {
+      const next = reduce(
+        joining,
+        { type: 'LOCAL_MEDIA_STATUS_CHANGED', kind: 'audio', status: 'acquiring' },
+        { type: 'LOCAL_MEDIA_STATUS_CHANGED', kind: 'video', status: 'acquiring' },
+        { type: 'LOCAL_MEDIA_STATUS_CHANGED', kind: 'audio', status: 'on' },
+        { type: 'LOCAL_MEDIA_STATUS_CHANGED', kind: 'video', status: 'denied' },
+      );
+      expect(next.localMedia).toEqual({ audio: 'on', video: 'denied', videoTrackVersion: 0 });
+    });
+
+    it('returns the same state for an unchanged status', () => {
+      const on = appReducer(joined, {
+        type: 'LOCAL_MEDIA_STATUS_CHANGED',
+        kind: 'video',
+        status: 'on',
+      });
+      const again = appReducer(on, {
+        type: 'LOCAL_MEDIA_STATUS_CHANGED',
+        kind: 'video',
+        status: 'on',
+      });
+      expect(again).toBe(on);
+    });
+
+    it.each<[string, AppState]>([
+      ['idle', initialAppState],
+      ['joining', joining],
+    ])('is accepted in %s: capture runs before join, stopAll after leaving', (_label, state) => {
+      const next = appReducer(state, {
+        type: 'LOCAL_MEDIA_STATUS_CHANGED',
+        kind: 'audio',
+        status: 'busy',
+      });
+      expect(next.localMedia.audio).toBe('busy');
+    });
+
+    it('is not reset by LEFT_ROOM: the controller reports off itself', () => {
+      const next = reduce(
+        joined,
+        { type: 'LOCAL_MEDIA_STATUS_CHANGED', kind: 'video', status: 'on' },
+        { type: 'LEFT_ROOM' },
+      );
+      expect(next.localMedia.video).toBe('on');
+    });
+  });
+
+  describe('LOCAL_VIDEO_TRACK_CHANGED', () => {
+    it('increments videoTrackVersion on every change', () => {
+      const next = reduce(
+        initialAppState,
+        { type: 'LOCAL_VIDEO_TRACK_CHANGED' },
+        { type: 'LOCAL_VIDEO_TRACK_CHANGED' },
+        { type: 'LOCAL_VIDEO_TRACK_CHANGED' },
+      );
+      expect(next.localMedia).toEqual({ audio: 'off', video: 'off', videoTrackVersion: 3 });
+    });
+  });
+
+  describe('PARTICIPANT_MEDIA_CHANGED', () => {
+    it('updates media of a known participant without touching the others', () => {
+      const next = appReducer(joined, {
+        type: 'PARTICIPANT_MEDIA_CHANGED',
+        participantId: maria.id,
+        media: { audio: true, video: false },
+      });
+      expect(next.participantsById[maria.id]).toEqual({
+        ...maria,
+        media: { audio: true, video: false },
+      });
+      expect(next.participantsById[alex.id]).toBe(joined.participantsById[alex.id]);
+      expect(next.participantIds).toBe(joined.participantIds);
+    });
+
+    it('is a no-op for an unknown participant', () => {
+      const next = appReducer(joined, {
+        type: 'PARTICIPANT_MEDIA_CHANGED',
+        participantId: 'ghost',
+        media: { audio: true, video: true },
+      });
+      expect(next).toBe(joined);
+    });
+
+    it('returns the same state for an unchanged value', () => {
+      const next = appReducer(joined, {
+        type: 'PARTICIPANT_MEDIA_CHANGED',
+        participantId: maria.id,
+        media: { ...maria.media },
+      });
+      expect(next).toBe(joined);
+    });
+
+    it.each<[string, AppState]>([
+      ['joining', joining],
+      ['connection-lost', reduce(joined, { type: 'CONNECTION_LOST' })],
+    ])('is ignored in %s', (_label, state) => {
+      const next = appReducer(state, {
+        type: 'PARTICIPANT_MEDIA_CHANGED',
+        participantId: maria.id,
+        media: { audio: true, video: true },
+      });
+      expect(next).toBe(state);
+    });
+
+    it('keeps media from the server on a PARTICIPANT_JOINED upsert', () => {
+      const next = appReducer(joined, {
+        type: 'PARTICIPANT_JOINED',
+        participant: { ...boris, media: { audio: true, video: false } },
+      });
+      expect(next.participantsById[boris.id]?.media).toEqual({ audio: true, video: false });
+    });
   });
 });
 
@@ -268,5 +467,36 @@ describe('selectors', () => {
   it('selectIsSelf compares with selfId', () => {
     expect(selectIsSelf(joined, alex.id)).toBe(true);
     expect(selectIsSelf(joined, maria.id)).toBe(false);
+  });
+
+  describe('selectParticipantMedia', () => {
+    it('reads localMedia for self, not the server copy', () => {
+      const state = reduce(
+        joined,
+        { type: 'LOCAL_MEDIA_STATUS_CHANGED', kind: 'audio', status: 'on' },
+        { type: 'LOCAL_MEDIA_STATUS_CHANGED', kind: 'video', status: 'lost' },
+      );
+      expect(state.participantsById[alex.id]?.media).toEqual({ audio: false, video: false });
+      expect(selectParticipantMedia(state, alex.id)).toEqual({ audio: true, video: false });
+    });
+
+    it('treats any status other than on as disabled', () => {
+      const acquiring = appReducer(joined, {
+        type: 'LOCAL_MEDIA_STATUS_CHANGED',
+        kind: 'video',
+        status: 'acquiring',
+      });
+      expect(selectParticipantMedia(acquiring, alex.id)).toEqual({ audio: false, video: false });
+    });
+
+    it('reads the server state for others and null for unknown ids', () => {
+      const state = appReducer(joined, {
+        type: 'PARTICIPANT_MEDIA_CHANGED',
+        participantId: maria.id,
+        media: { audio: true, video: false },
+      });
+      expect(selectParticipantMedia(state, maria.id)).toEqual({ audio: true, video: false });
+      expect(selectParticipantMedia(state, 'ghost')).toBeNull();
+    });
   });
 });

@@ -27,7 +27,13 @@ describe('HTTP without client dist (dev mode)', () => {
 
   it('reports rooms from the registry', async () => {
     const chatBucket = new TokenBucket({ capacity: 1, refillPerSecond: 1 });
-    t.server.registry.join('r1', { id: 'p1', socketId: 's1', name: 'A', chatBucket });
+    t.server.registry.join('r1', {
+      id: 'p1',
+      socketId: 's1',
+      name: 'A',
+      chatBucket,
+      media: { audio: true, video: true },
+    });
     try {
       const body = (await (await fetch(`${t.url}/healthz`)).json()) as { rooms: number };
       expect(body.rooms).toBe(1);

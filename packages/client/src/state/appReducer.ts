@@ -1,4 +1,5 @@
 import { CHAT_HISTORY_LIMIT, type ChatMessage, type ParticipantDTO } from '@vcr/shared';
+import type { DeviceStatus } from '../media/MediaController';
 import type { AppAction, ChatSendFailure, JoinFailure } from './actions';
 
 export type SessionPhase =
@@ -14,6 +15,20 @@ export interface ChatState {
   /** id сообщений из messages — для дедупликации (Record, а не Set: state сериализуем). */
   messageIds: Record<string, true>;
 }
+
+/**
+ * Зеркало статусов MediaController (этап 3). Источник правды для собственного mic/cam в UI:
+ * participantsById[selfId].media обновляется только сервером и отстаёт на сеть.
+ */
+export interface LocalMediaState {
+  audio: DeviceStatus;
+  video: DeviceStatus;
+  /** ++ при каждой смене видеотрека → перепривязка srcObject. */
+  videoTrackVersion: number;
+}
+
+/** Подэтап фазы joining: захват медиа до room:join, затем подключение. */
+export type JoinStep = 'acquiring-media' | 'connecting';
 
 /** Общий слот тостов: чат (этап 2), медиа и звонок (этапы 3–4). */
 export interface Notice {
@@ -32,12 +47,16 @@ export interface AppState {
   displayName: string | null;
   roomId: string | null;
   phase: SessionPhase;
+  /** Не null только в фазе joining. */
+  joinStep: JoinStep | null;
   selfId: string | null;
   /** Порядок = joinedAt. */
   participantIds: string[];
   participantsById: Record<string, ParticipantDTO>;
   chat: ChatState;
   notice: Notice | null;
+  /** Не сбрасывается при выходе: controller сам сообщает off после stopAll(). */
+  localMedia: LocalMediaState;
 }
 
 const emptyChat: ChatState = { messages: [], messageIds: {} };
@@ -46,15 +65,18 @@ export const initialAppState: AppState = {
   displayName: null,
   roomId: null,
   phase: { kind: 'idle' },
+  joinStep: null,
   selfId: null,
   participantIds: [],
   participantsById: {},
   chat: emptyChat,
   notice: null,
+  localMedia: { audio: 'off', video: 'off', videoTrackVersion: 0 },
 };
 
 /** Всё, что относится к конкретному пребыванию в комнате. */
 const noRoomData = {
+  joinStep: null,
   selfId: null,
   participantIds: [],
   participantsById: {},
@@ -89,7 +111,8 @@ function buildChat(messages: readonly ChatMessage[]): ChatState {
  * Чистый reducer сессии. Действие, недопустимое в текущей фазе (например, запоздавший ack
  * после выхода), возвращает тот же объект state.
  *
- *   idle / failed / connection-lost ──JOIN_REQUESTED──▶ joining
+ *   idle / failed / connection-lost ──JOIN_REQUESTED──▶ joining (acquiring-media)
+ *   joining (acquiring-media) ──JOIN_CONNECTING──▶ joining (connecting)
  *   joining ──JOIN_SUCCEEDED──▶ joined        joining ──JOIN_FAILED──▶ failed
  *   joined ──CONNECTION_LOST──▶ connection-lost
  *   любая фаза ──LEFT_ROOM──▶ idle
@@ -104,7 +127,13 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         displayName: action.name,
         roomId: action.roomId,
         phase: { kind: 'joining' },
+        joinStep: 'acquiring-media',
       };
+    }
+
+    case 'JOIN_CONNECTING': {
+      if (state.phase.kind !== 'joining' || state.joinStep === 'connecting') return state;
+      return { ...state, joinStep: 'connecting' };
     }
 
     case 'JOIN_SUCCEEDED': {
@@ -118,6 +147,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return {
         ...state,
         phase: { kind: 'joined' },
+        joinStep: null,
         selfId: action.self.id,
         participantIds,
         participantsById,
@@ -185,9 +215,43 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, notice: { id: (state.notice?.id ?? 0) + 1, text, tone: 'error' } };
     }
 
+    case 'NOTICE_SHOWN': {
+      const { text, tone } = action;
+      return { ...state, notice: { id: (state.notice?.id ?? 0) + 1, text, tone } };
+    }
+
     case 'NOTICE_DISMISSED': {
       if (state.notice === null) return state;
       return { ...state, notice: null };
+    }
+
+    // Статусы приходят в любой фазе: захват идёт во время joining, stopAll() — после выхода.
+    case 'LOCAL_MEDIA_STATUS_CHANGED': {
+      if (state.localMedia[action.kind] === action.status) return state;
+      return { ...state, localMedia: { ...state.localMedia, [action.kind]: action.status } };
+    }
+
+    case 'LOCAL_VIDEO_TRACK_CHANGED': {
+      const { localMedia } = state;
+      return {
+        ...state,
+        localMedia: { ...localMedia, videoTrackVersion: localMedia.videoTrackVersion + 1 },
+      };
+    }
+
+    case 'PARTICIPANT_MEDIA_CHANGED': {
+      if (state.phase.kind !== 'joined') return state;
+      const participant = state.participantsById[action.participantId];
+      if (!participant) return state;
+      const { audio, video } = action.media;
+      if (participant.media.audio === audio && participant.media.video === video) return state;
+      return {
+        ...state,
+        participantsById: {
+          ...state.participantsById,
+          [participant.id]: { ...participant, media: { audio, video } },
+        },
+      };
     }
   }
 }

@@ -23,6 +23,7 @@ function setup(opts: { historyLimit?: number } = {}) {
       id: `p${participantSeq}`,
       socketId: `s${participantSeq}`,
       name,
+      media: { audio: true, video: true },
       chatBucket: new TokenBucket({
         capacity: CHAT_RATE_LIMIT.burst,
         refillPerSecond: CHAT_RATE_LIMIT.refillPerSecond,

@@ -4,6 +4,7 @@ import { RoomRegistry } from '../../src/rooms/RoomRegistry';
 import {
   connectClient,
   connectClients,
+  DEFAULT_MEDIA,
   disconnectAll,
   join,
   joinOk,
@@ -42,7 +43,7 @@ describe('room:join / room:leave / disconnect', () => {
       const ackA = await joinOk(a!, 'room1', 'Алекс');
       expect(ackA.participants).toEqual([ackA.self]);
 
-      const ackB = await joinOk(b!, 'room1', 'Борис');
+      const ackB = await joinOk(b!, 'room1', 'Борис', { audio: true, video: false });
       expect(ackB.self.name).toBe('Борис');
       expect(ackB.self.id).not.toBe(ackA.self.id);
       expect(ackB.participants).toEqual([ackA.self, ackB.self]);
@@ -52,6 +53,29 @@ describe('room:join / room:leave / disconnect', () => {
       });
       // Новичок не получает событие о самом себе.
       expect(bEvents).toEqual([]);
+    });
+
+    it('carries media from room:join in the DTOs of the newcomer and the old-timers', async () => {
+      const [a, b] = await connectClients(t.url, 2);
+      const aEvents = recordEvents(a!);
+
+      const ackA = await joinOk(a!, 'room1', 'Алекс', { audio: false, video: true });
+      expect(ackA.self.media).toEqual({ audio: false, video: true });
+
+      const ackB = await joinOk(b!, 'room1', 'Борис', { audio: true, video: false });
+      expect(ackB.self.media).toEqual({ audio: true, video: false });
+      expect(ackB.participants.map((p) => p.media)).toEqual([
+        { audio: false, video: true },
+        { audio: true, video: false },
+      ]);
+
+      await vi.waitFor(() => {
+        expect(aEvents).toEqual([{ type: 'joined', participant: ackB.self }]);
+      });
+      expect(t.server.registry.getParticipant('room1', ackB.self.id)?.media).toEqual({
+        audio: true,
+        video: false,
+      });
     });
 
     it('normalizes the name before storing it', async () => {
@@ -177,18 +201,45 @@ describe('room:join / room:leave / disconnect', () => {
   });
 
   describe('validation', () => {
+    const media = DEFAULT_MEDIA;
+
     it.each([
       ['empty object', {}, 'INVALID_PAYLOAD'],
       ['non-object payload', 'room1', 'INVALID_PAYLOAD'],
       ['null payload', null, 'INVALID_PAYLOAD'],
-      ['extra fields', { roomId: 'room1', name: 'Алекс', admin: true }, 'INVALID_PAYLOAD'],
-      ['wrong field types', { roomId: 1, name: 'Алекс' }, 'INVALID_PAYLOAD'],
-      ['name over the raw ceiling', { roomId: 'room1', name: 'a'.repeat(201) }, 'INVALID_PAYLOAD'],
-      ['path traversal roomId', { roomId: '../x', name: 'Алекс' }, 'INVALID_ROOM_ID'],
-      ['empty roomId', { roomId: '', name: 'Алекс' }, 'INVALID_ROOM_ID'],
-      ['html in name', { roomId: 'room1', name: '<b>' }, 'INVALID_NAME'],
-      ['whitespace name', { roomId: 'room1', name: '   ' }, 'INVALID_NAME'],
-      ['too long name', { roomId: 'room1', name: 'a'.repeat(NAME_MAX_LENGTH + 1) }, 'INVALID_NAME'],
+      ['extra fields', { roomId: 'room1', name: 'Алекс', media, admin: true }, 'INVALID_PAYLOAD'],
+      ['wrong field types', { roomId: 1, name: 'Алекс', media }, 'INVALID_PAYLOAD'],
+      [
+        'name over the raw ceiling',
+        { roomId: 'room1', name: 'a'.repeat(201), media },
+        'INVALID_PAYLOAD',
+      ],
+      ['missing media', { roomId: 'room1', name: 'Алекс' }, 'INVALID_PAYLOAD'],
+      ['null media', { roomId: 'room1', name: 'Алекс', media: null }, 'INVALID_PAYLOAD'],
+      [
+        'partial media',
+        { roomId: 'room1', name: 'Алекс', media: { audio: true } },
+        'INVALID_PAYLOAD',
+      ],
+      [
+        'non-boolean media',
+        { roomId: 'room1', name: 'Алекс', media: { audio: 1, video: 'yes' } },
+        'INVALID_PAYLOAD',
+      ],
+      [
+        'extra media fields',
+        { roomId: 'room1', name: 'Алекс', media: { ...media, screen: true } },
+        'INVALID_PAYLOAD',
+      ],
+      ['path traversal roomId', { roomId: '../x', name: 'Алекс', media }, 'INVALID_ROOM_ID'],
+      ['empty roomId', { roomId: '', name: 'Алекс', media }, 'INVALID_ROOM_ID'],
+      ['html in name', { roomId: 'room1', name: '<b>', media }, 'INVALID_NAME'],
+      ['whitespace name', { roomId: 'room1', name: '   ', media }, 'INVALID_NAME'],
+      [
+        'too long name',
+        { roomId: 'room1', name: 'a'.repeat(NAME_MAX_LENGTH + 1), media },
+        'INVALID_NAME',
+      ],
     ])('rejects %s with %s', async (_label, payload, code) => {
       const client = await connectClient(t.url);
 
@@ -207,7 +258,11 @@ describe('room:join / room:leave / disconnect', () => {
 
     it('ignores room:join without an ack function', async () => {
       const client = await connectClient(t.url);
-      (client as unknown as RawEmitter).emit('room:join', { roomId: 'room1', name: 'Алекс' });
+      (client as unknown as RawEmitter).emit('room:join', {
+        roomId: 'room1',
+        name: 'Алекс',
+        media: DEFAULT_MEDIA,
+      });
 
       // Следующая команда обрабатывается после предыдущей: сокет не попал в комнату.
       const ack = await joinOk(client, 'room2');

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "check:no-e2e-hook": "vite build && node scripts/check-no-e2e-hook.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

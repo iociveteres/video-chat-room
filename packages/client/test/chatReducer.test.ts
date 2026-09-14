@@ -3,7 +3,12 @@ import { describe, expect, it } from 'vitest';
 import type { AppAction, ChatSendFailure } from '../src/state/actions';
 import { appReducer, initialAppState, type AppState } from '../src/state/appReducer';
 
-const alex: ParticipantDTO = { id: 'p-alex', name: 'Алекс', joinedAt: 1_000 };
+const alex: ParticipantDTO = {
+  id: 'p-alex',
+  name: 'Алекс',
+  joinedAt: 1_000,
+  media: { audio: false, video: false },
+};
 
 function userMessage(n: number): ChatMessage {
   return {

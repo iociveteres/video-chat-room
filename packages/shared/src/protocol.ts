@@ -1,4 +1,11 @@
-// Сокет-контракт. Этап 1 — комната, этап 2 — чат; следующие этапы только добавляют события и поля.
+// Сокет-контракт. Этап 1 — комната, этап 2 — чат, этап 3 — состояние микрофона и камеры;
+// следующие этапы только добавляют события и поля.
+
+/** Публичное состояние: «передаётся ли». Причину (denied / not-found / …) знает только владелец. */
+export interface MediaState {
+  audio: boolean;
+  video: boolean;
+}
 
 export interface ParticipantDTO {
   /** UUID, генерирует сервер; в UI не показывается. */
@@ -7,6 +14,8 @@ export interface ParticipantDTO {
   name: string;
   /** Epoch ms по серверным часам; задаёт порядок. */
   joinedAt: number;
+  /** Этап 3: включены ли микрофон и камера. */
+  media: MediaState;
 }
 
 export type SystemEvent = 'participant-joined' | 'participant-left';
@@ -52,6 +61,8 @@ export type Ack<T extends object = object> = ({ ok: true } & T) | AckError;
 export interface JoinRequest {
   roomId: string;
   name: string;
+  /** Этап 3: начальное состояние после захвата медиа; обязательно. */
+  media: MediaState;
 }
 
 export type JoinAck = Ack<{
@@ -72,6 +83,8 @@ export interface ClientToServerEvents {
   'room:join': (req: JoinRequest, ack: (res: JoinAck) => void) => void;
   'room:leave': (ack: (res: Ack) => void) => void;
   'chat:send': (req: ChatSendRequest, ack: (res: ChatSendAck) => void) => void;
+  /** Этап 3: fire-and-forget, последнее значение побеждает. */
+  'media:update': (state: MediaState) => void;
 }
 
 export interface ServerToClientEvents {
@@ -79,6 +92,8 @@ export interface ServerToClientEvents {
   'participant:left': (e: { participantId: string }) => void;
   /** Всем в комнате, включая отправителя. */
   'chat:message': (e: { message: ChatMessage }) => void;
+  /** Этап 3: всем в комнате, кроме отправителя; participantId сервер берёт из сокета. */
+  'participant:media': (e: { participantId: string; media: MediaState }) => void;
 }
 
 /** Межсерверных событий нет: один процесс Node. */

@@ -3,21 +3,40 @@ import {
   CONNECT_TIMEOUT_MS,
   type ChatSendAck,
   type JoinAck,
+  type MediaState,
   type ServerErrorCode,
 } from '@vcr/shared';
 import type { Dispatch } from 'react';
+import { MediaController, type MediaControllerDeps } from '../media/MediaController';
 import { createSocket as defaultCreateSocket, type AppClientSocket } from '../net/createSocket';
 import type { AppAction, ChatSendFailure, JoinFailure } from '../state/actions';
 
 /** Сколько ждём ack на room:leave, прежде чем просто закрыть соединение. */
 export const LEAVE_ACK_TIMEOUT_MS = 2_000;
 
+/** Колбэки, которыми RoomSession связывает MediaController с reducer'ом и сокетом. */
+export type MediaCallbacks = Pick<MediaControllerDeps, 'onStatus' | 'onNotice'>;
+
 export interface RoomSessionDeps {
   dispatch: Dispatch<AppAction>;
   createSocket?: () => AppClientSocket;
+  /** Подмена MediaController (тесты); по умолчанию — настоящие navigator.mediaDevices. */
+  createMedia?: (callbacks: MediaCallbacks) => MediaController;
 }
 
 type Status = 'idle' | 'joining' | 'joined';
+
+const defaultCreateMedia = (callbacks: MediaCallbacks) =>
+  new MediaController({
+    // Наличие mediaDevices гарантирует гейт окружения (TDD этапа 1).
+    mediaDevices: navigator.mediaDevices,
+    permissions: 'permissions' in navigator ? navigator.permissions : undefined,
+    ...callbacks,
+  });
+
+function sameMedia(a: MediaState, b: MediaState): boolean {
+  return a.audio === b.audio && a.video === b.video;
+}
 
 /** Реакция клиента на коды ошибок сервера (TDD §6.3). */
 export function mapJoinError(code: ServerErrorCode): JoinFailure {
@@ -69,18 +88,38 @@ export function mapChatSendError(code: ServerErrorCode): ChatSendFailure {
  * Создаётся один раз на вкладку (в AppStateProvider). Каждый вход — новый сокет, поэтому
  * повторный вход сервер видит как нового участника (FR-28, FR-31). События от сокета,
  * который уже не текущий (после выхода или ошибки), игнорируются.
+ *
+ * Этап 3: владеет MediaController. Медиа захватывается до room:join, изменения mic/cam уходят
+ * через media:update, а на любом пути выхода устройства освобождаются (TDD этапа 3 §4.4).
  */
 export class RoomSession {
+  readonly media: MediaController;
+
   private readonly dispatch: Dispatch<AppAction>;
   private readonly createSocket: () => AppClientSocket;
   private socket: AppClientSocket | null = null;
   private status: Status = 'idle';
   private connectTimer: ReturnType<typeof setTimeout> | undefined;
   private currentRoomId: string | null = null;
+  /** Вход, ожидающий захвата медиа; null, когда подключение уже начато или входа нет. */
+  private pendingJoin: { roomId: string; name: string } | null = null;
+  /** Последнее отправленное серверу состояние mic/cam (в room:join или media:update). */
+  private lastSentMedia: MediaState | null = null;
 
   constructor(deps: RoomSessionDeps) {
     this.dispatch = deps.dispatch;
     this.createSocket = deps.createSocket ?? defaultCreateSocket;
+    this.media = (deps.createMedia ?? defaultCreateMedia)({
+      // Прямо из колбэка, без useEffect: состояние уходит серверу сразу за reducer'ом.
+      onStatus: (kind, status) => {
+        this.dispatch({ type: 'LOCAL_MEDIA_STATUS_CHANGED', kind, status });
+        this.publishMediaState(this.media.getPublicState());
+      },
+      onNotice: (text, tone) => this.dispatch({ type: 'NOTICE_SHOWN', text, tone }),
+    });
+    this.media.onTrackChange((kind) => {
+      if (kind === 'video') this.dispatch({ type: 'LOCAL_VIDEO_TRACK_CHANGED' });
+    });
   }
 
   /** Комната последней попытки входа (в том числе неудачной); null после выхода. */
@@ -88,53 +127,35 @@ export class RoomSession {
     return this.currentRoomId;
   }
 
-  /** No-op, если вход уже идёт или выполнен (двойной клик, повторный submit). */
+  /**
+   * Вход: захват медиа → connect → room:join { media }. Захват идёт в обработчике клика
+   * («Войти» — жест пользователя), поэтому в StrictMode двойного getUserMedia нет.
+   * No-op, если вход уже идёт или выполнен (двойной клик, повторный submit).
+   */
   join(roomId: string, name: string): void {
     if (this.status !== 'idle') return;
 
     this.status = 'joining';
     this.currentRoomId = roomId;
+    const pending = { roomId, name };
+    this.pendingJoin = pending;
     this.dispatch({ type: 'JOIN_REQUESTED', roomId, name });
 
-    const socket = this.createSocket();
-    this.socket = socket;
-    const isCurrent = () => this.socket === socket;
+    void this.media.acquireInitial().then(() => {
+      // За время захвата пользователь мог уйти, войти заново или пропустить медиа.
+      if (this.pendingJoin === pending) this.connect(roomId, name);
+    });
+  }
 
-    // Все слушатели — до connect(), чтобы не пропустить ни одного события.
-    socket.on('participant:joined', ({ participant }) => {
-      if (isCurrent()) this.dispatch({ type: 'PARTICIPANT_JOINED', participant });
-    });
-    socket.on('participant:left', ({ participantId }) => {
-      if (isCurrent()) this.dispatch({ type: 'PARTICIPANT_LEFT', participantId });
-    });
-    socket.on('chat:message', ({ message }) => {
-      if (isCurrent()) this.dispatch({ type: 'CHAT_MESSAGE_RECEIVED', message });
-    });
-    socket.on('connect_error', () => {
-      if (isCurrent() && this.status === 'joining') this.fail('SERVER_UNAVAILABLE');
-    });
-    socket.on('disconnect', (reason) => {
-      if (!isCurrent()) return;
-      if (this.status === 'joining') {
-        this.fail('SERVER_UNAVAILABLE');
-      } else if (this.status === 'joined' && reason !== 'io client disconnect') {
-        this.teardown();
-        this.dispatch({ type: 'CONNECTION_LOST' });
-      }
-    });
-    socket.once('connect', () => {
-      clearTimeout(this.connectTimer);
-      if (isCurrent() && this.status === 'joining') this.sendJoin(socket, roomId, name);
-    });
-
-    // Таймаут io() покрывает только транспорт; этот — ещё и подключение к namespace.
-    this.connectTimer = setTimeout(() => {
-      if (isCurrent() && this.status === 'joining' && !socket.connected) {
-        this.fail('SERVER_UNAVAILABLE');
-      }
-    }, CONNECT_TIMEOUT_MS);
-
-    socket.connect();
+  /**
+   * «Войти без камеры и микрофона» на время ожидания ответа на запрос разрешения (TBD-3):
+   * статусы off, поздно пришедшие треки сразу останавливаются, вход продолжается.
+   */
+  joinWithoutMedia(): void {
+    const pending = this.pendingJoin;
+    if (!pending || this.status !== 'joining') return;
+    this.media.stopAll();
+    this.connect(pending.roomId, pending.name);
   }
 
   /** Выход по кнопке «Выйти», «Назад» или «На главную». Работает из любой фазы. */
@@ -166,6 +187,27 @@ export class RoomSession {
     else this.dispatch({ type: 'JOIN_FAILED', reason: 'SERVER_UNAVAILABLE' });
   }
 
+  /** Тумблер микрофона: из выключенного или ошибочного статуса — включить. */
+  toggleAudio(): void {
+    if (this.status !== 'joined') return;
+    void this.media.setAudioEnabled(!this.media.getPublicState().audio);
+  }
+
+  /** Тумблер камеры: выключение гасит лампочку, включение — новый getUserMedia. */
+  toggleVideo(): void {
+    if (this.status !== 'joined') return;
+    void this.media.setVideoEnabled(!this.media.getPublicState().video);
+  }
+
+  /** Дедупликация по lastSentMedia; отправляет только в фазе joined. */
+  publishMediaState(state: MediaState): void {
+    const socket = this.socket;
+    if (!socket || this.status !== 'joined') return;
+    if (this.lastSentMedia && sameMedia(this.lastSentMedia, state)) return;
+    this.lastSentMedia = { ...state };
+    socket.emit('media:update', { ...state });
+  }
+
   /**
    * Отправляет сообщение в чат. Promise<boolean> нужен только полю ввода — вернуть текст при
    * ошибке; само сообщение попадёт в state через broadcast chat:message, как и у остальных.
@@ -193,17 +235,68 @@ export class RoomSession {
     });
   }
 
-  /** Освобождает ресурсы без изменения state. Сессию можно использовать снова. */
+  /** Освобождает сокет и устройства. Сессию можно использовать снова. */
   dispose(): void {
     this.teardown();
   }
 
+  private connect(roomId: string, name: string): void {
+    this.pendingJoin = null;
+    this.dispatch({ type: 'JOIN_CONNECTING' });
+
+    const socket = this.createSocket();
+    this.socket = socket;
+    const isCurrent = () => this.socket === socket;
+
+    // Все слушатели — до connect(), чтобы не пропустить ни одного события.
+    socket.on('participant:joined', ({ participant }) => {
+      if (isCurrent()) this.dispatch({ type: 'PARTICIPANT_JOINED', participant });
+    });
+    socket.on('participant:left', ({ participantId }) => {
+      if (isCurrent()) this.dispatch({ type: 'PARTICIPANT_LEFT', participantId });
+    });
+    socket.on('participant:media', ({ participantId, media }) => {
+      if (isCurrent()) this.dispatch({ type: 'PARTICIPANT_MEDIA_CHANGED', participantId, media });
+    });
+    socket.on('chat:message', ({ message }) => {
+      if (isCurrent()) this.dispatch({ type: 'CHAT_MESSAGE_RECEIVED', message });
+    });
+    socket.on('connect_error', () => {
+      if (isCurrent() && this.status === 'joining') this.fail('SERVER_UNAVAILABLE');
+    });
+    socket.on('disconnect', (reason) => {
+      if (!isCurrent()) return;
+      if (this.status === 'joining') {
+        this.fail('SERVER_UNAVAILABLE');
+      } else if (this.status === 'joined' && reason !== 'io client disconnect') {
+        this.teardown();
+        this.dispatch({ type: 'CONNECTION_LOST' });
+      }
+    });
+    socket.once('connect', () => {
+      clearTimeout(this.connectTimer);
+      if (isCurrent() && this.status === 'joining') this.sendJoin(socket, roomId, name);
+    });
+
+    // Таймаут io() покрывает только транспорт; этот — ещё и подключение к namespace.
+    // Отсчёт начинается после захвата медиа: время на ответ о разрешении сюда не входит.
+    this.connectTimer = setTimeout(() => {
+      if (isCurrent() && this.status === 'joining' && !socket.connected) {
+        this.fail('SERVER_UNAVAILABLE');
+      }
+    }, CONNECT_TIMEOUT_MS);
+
+    socket.connect();
+  }
+
   private sendJoin(socket: AppClientSocket, roomId: string, name: string): void {
+    const media = this.media.getPublicState();
+    this.lastSentMedia = media;
     // Только callback-ack, не emitWithAck: продолжение после await выполнилось бы уже после
     // событий из той же пачки пакетов, и в списке появились бы «призраки» (TDD §4.3).
     socket
       .timeout(ACK_TIMEOUT_MS)
-      .emit('room:join', { roomId, name }, (err: Error | null, res: JoinAck) => {
+      .emit('room:join', { roomId, name, media }, (err: Error | null, res: JoinAck) => {
         if (this.socket !== socket || this.status !== 'joining') return;
         if (err) return this.fail('SERVER_UNAVAILABLE');
         if (!res.ok) return this.fail(mapJoinError(res.error.code));
@@ -215,6 +308,8 @@ export class RoomSession {
           participants: res.participants,
           messages: res.messages,
         });
+        // Статус мог измениться между room:join и ack (например, устройство пропало).
+        this.publishMediaState(this.media.getPublicState());
       });
   }
 
@@ -223,12 +318,18 @@ export class RoomSession {
     this.dispatch({ type: 'JOIN_FAILED', reason });
   }
 
-  /** Отвязывает текущий сокет до disconnect(), чтобы его события уже не считались текущими. */
+  /**
+   * Отвязывает текущий сокет до disconnect(), чтобы его события уже не считались текущими,
+   * и освобождает устройства: лампочка камеры гаснет на любом пути выхода.
+   */
   private teardown({ disconnect = true } = {}): void {
     clearTimeout(this.connectTimer);
     const socket = this.socket;
     this.socket = null;
     this.status = 'idle';
+    this.pendingJoin = null;
+    this.lastSentMedia = null;
     if (disconnect) socket?.disconnect();
+    this.media.stopAll();
   }
 }
