@@ -1,6 +1,7 @@
 import { navigate } from '../../app/router';
 import { useAppState, useRoomSession } from '../../state/AppStateProvider';
 import { selectParticipants } from '../../state/selectors';
+import { ChatPanel } from '../chat/ChatPanel';
 import { NameForm } from '../lobby/NameForm';
 import { StatusScreen } from '../status/StatusScreen';
 import { ParticipantList } from './ParticipantList';
@@ -46,7 +47,12 @@ export function RoomPage({ roomId }: RoomPageProps) {
       return (
         <div className="room">
           <RoomHeader roomId={roomId} onLeave={goHome} />
-          <ParticipantList participants={selectParticipants(state)} selfId={state.selfId} />
+          {/* Область видео: сетка участников появится на этапах 3–5. */}
+          <div className="room__stage" aria-hidden="true" />
+          <aside className="room__sidebar">
+            <ParticipantList participants={selectParticipants(state)} selfId={state.selfId} />
+            <ChatPanel />
+          </aside>
         </div>
       );
 

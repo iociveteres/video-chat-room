@@ -1,4 +1,4 @@
-import type { ParticipantDTO } from '@vcr/shared';
+import type { ChatMessage, ParticipantDTO } from '@vcr/shared';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StrictMode } from 'react';
@@ -150,6 +150,76 @@ describe('RoomPage', () => {
     await t.user.click(screen.getByRole('button', { name: 'Войти снова' }));
     expect(t.sockets).toHaveLength(2);
     expect(screen.getByRole('status')).toHaveTextContent('Подключаемся к комнате…');
+  });
+
+  describe('chat', () => {
+    const joinedAlex = {
+      kind: 'system',
+      id: 'm-1',
+      ts: Date.UTC(2026, 8, 14, 6, 0),
+      event: 'participant-joined',
+      participantId: alex.id,
+      participantName: alex.name,
+    } satisfies ChatMessage;
+
+    it('shows the chat next to the participants with the history from the ack', async () => {
+      const t = renderRoom();
+      await enterName(t.user);
+
+      t.serverAcceptsJoin({ ok: true, self: alex, participants: [alex], messages: [joinedAlex] });
+
+      const sidebar = screen.getByRole('complementary');
+      expect(within(sidebar).getByRole('region', { name: /Участники/ })).toBeInTheDocument();
+      const chat = within(sidebar).getByRole('region', { name: 'Чат' });
+      expect(within(chat).getByRole('log')).toHaveTextContent('Алекс присоединился09:00');
+      expect(within(chat).getByRole('textbox', { name: 'Сообщение' })).toBeInTheDocument();
+    });
+
+    it('sends a message with Enter and shows it after the broadcast', async () => {
+      const t = renderRoom();
+      await enterName(t.user);
+      t.serverAcceptsJoin({ ok: true, self: alex, participants: [alex], messages: [] });
+
+      await t.user.type(screen.getByRole('textbox', { name: 'Сообщение' }), 'Привет{Enter}');
+
+      const command = t.lastSocket().lastEmitted('chat:send');
+      expect(command.args).toEqual([{ text: 'Привет' }]);
+      const message = {
+        kind: 'user',
+        id: 'm-2',
+        ts: Date.UTC(2026, 8, 14, 6, 5),
+        authorId: alex.id,
+        authorName: alex.name,
+        text: 'Привет',
+      } satisfies ChatMessage;
+      await act(async () => {
+        t.lastSocket().serverEmit('chat:message', { message });
+        command.respond({ ok: true, messageId: message.id });
+        await Promise.resolve();
+      });
+
+      const item = within(screen.getByRole('log')).getByRole('listitem');
+      expect(item).toHaveTextContent('Алекс09:05Привет');
+      expect(item).toHaveClass('message--own');
+      expect(screen.getByRole('textbox', { name: 'Сообщение' })).toHaveValue('');
+    });
+
+    it('returns the text to the field when the server rate-limits it', async () => {
+      const t = renderRoom();
+      await enterName(t.user);
+      t.serverAcceptsJoin({ ok: true, self: alex, participants: [alex], messages: [] });
+      const field = screen.getByRole('textbox', { name: 'Сообщение' });
+
+      await t.user.type(field, 'флуд{Enter}');
+      await act(async () => {
+        t.lastSocket()
+          .lastEmitted('chat:send')
+          .respond({ ok: false, error: { code: 'RATE_LIMITED' } });
+        await Promise.resolve();
+      });
+
+      expect(field).toHaveValue('флуд');
+    });
   });
 
   it('INVALID_NAME → back to the name form with a server hint', async () => {

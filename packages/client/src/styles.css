@@ -108,10 +108,32 @@ button:disabled {
   }
 }
 
+/* Экран комнаты (PRD §6, ≥ 1024px): шапка сверху, слева видео, справа участники и чат. */
 .room {
-  max-width: 64rem;
-  margin: 0 auto;
-  padding: 1.5rem 2rem;
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 1rem 1.5rem;
+  height: 100vh;
+  padding: 1rem 1.5rem;
+  box-sizing: border-box;
+}
+
+.room-header {
+  grid-column: 1 / -1;
+}
+
+.room__stage {
+  border: 1px dashed #9ca3af;
+  border-radius: 0.75rem;
+}
+
+.room__sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  /* Без min-height: 0 flex-потомки не сжимаются и лента не скроллится. */
+  min-height: 0;
 }
 
 .room-header {
@@ -167,7 +189,9 @@ button:disabled {
   white-space: nowrap;
 }
 
-.participants h2 {
+.participants h2,
+.chat h2 {
+  margin: 0 0 0.5rem;
   font-size: 1.125rem;
 }
 
@@ -186,14 +210,82 @@ button:disabled {
   opacity: 0.7;
 }
 
-.chat h2 {
-  font-size: 1.125rem;
+.chat {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .message-list {
+  flex: 1;
+  min-height: 0;
   margin: 0;
-  padding: 0;
+  padding: 0 0.25rem 0 0;
+  overflow-y: auto;
   list-style: none;
+}
+
+.message-input {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #9ca3af;
+}
+
+.message-input__field {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #9ca3af;
+  border-radius: 0.5rem;
+  font: inherit;
+  resize: vertical;
+}
+
+.message-input__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+.message-input__counter {
+  opacity: 0.7;
+  font-size: 0.875rem;
+}
+
+.message-input__counter--over {
+  color: #dc2626;
+  opacity: 1;
+}
+
+.notice {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  max-width: 32rem;
+  padding: 0.5rem 0.5rem 0.5rem 1rem;
+  border-radius: 0.5rem;
+  background: #111827;
+  color: #fff;
+  transform: translateX(-50%);
+}
+
+.notice--error {
+  background: #b91c1c;
+}
+
+.notice__close {
+  padding: 0.125rem 0.5rem;
+  background: transparent;
+  color: inherit;
+  font-size: 1.25rem;
+  line-height: 1;
 }
 
 .message {
