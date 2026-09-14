@@ -170,6 +170,11 @@ button:disabled {
   visibility: hidden;
 }
 
+/* Ждём свежий кадр (useFreshFrame): элемент получает кадры, но не виден под заглушкой. */
+.tile__video--pending {
+  opacity: 0;
+}
+
 .tile__label {
   position: absolute;
   left: 0.75rem;
@@ -254,6 +259,14 @@ button:disabled {
   border: 1px solid #f59e0b;
   border-radius: 0.5rem;
   background: rgb(245 158 11 / 12%);
+}
+
+.autoplay-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 
 .participants__media {

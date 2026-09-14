@@ -1,6 +1,7 @@
 import type { MediaState } from '@vcr/shared';
 import type { PeerStatus } from '../../call/PeerSession';
 import { useAppState, useRoomSession } from '../../state/AppStateProvider';
+import { useAutoplayRegistry } from './AutoplayGuard';
 import { VideoTile } from './VideoTile';
 
 export const PEER_STATUS_TEXT = {
@@ -48,6 +49,7 @@ export interface RemoteTileProps {
 export function RemoteTile({ participantId }: RemoteTileProps) {
   const state = useAppState();
   const session = useRoomSession();
+  const autoplay = useAutoplayRegistry();
   const participant = state.participantsById[participantId];
   if (!participant) return null;
 
@@ -63,6 +65,8 @@ export function RemoteTile({ participantId }: RemoteTileProps) {
       audioMuted={!participant.media.audio}
       statusLabel={view.statusLabel}
       overlayLabel={view.overlayLabel}
+      registerVideo={autoplay?.register}
+      waitForFreshFrame
     />
   );
 }

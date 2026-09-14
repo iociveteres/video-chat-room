@@ -1,5 +1,6 @@
 import { navigate } from '../../app/router';
 import { useAppState, useRoomSession } from '../../state/AppStateProvider';
+import { AutoplayBanner, AutoplayGuard } from '../call/AutoplayGuard';
 import { VideoStage } from '../call/VideoStage';
 import { ControlBar } from '../controls/ControlBar';
 import { NameForm } from '../lobby/NameForm';
@@ -60,12 +61,15 @@ export function RoomPage({ roomId }: RoomPageProps) {
       return (
         <div className="room">
           <div className="room__main">
-            <RoomHeader roomId={roomId} />
-            <MediaAccessBanner />
-            <div className="room__stage">
-              <VideoStage />
-            </div>
-            <ControlBar onLeave={goHome} />
+            <AutoplayGuard>
+              <RoomHeader roomId={roomId} />
+              <MediaAccessBanner />
+              <AutoplayBanner />
+              <div className="room__stage">
+                <VideoStage />
+              </div>
+              <ControlBar onLeave={goHome} />
+            </AutoplayGuard>
           </div>
           <RoomSidebar />
         </div>
