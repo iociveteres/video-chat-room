@@ -11,6 +11,8 @@ export class FakeTrack extends EventTarget {
   readonly stop = vi.fn(() => {
     this.readyState = 'ended';
   });
+  /** Клоны запрещены инвариантом controller'а: тесты проверяют, что вызовов нет. */
+  readonly clone = vi.fn(() => new FakeTrack(this.kind));
 
   constructor(readonly kind: TrackKind) {
     super();

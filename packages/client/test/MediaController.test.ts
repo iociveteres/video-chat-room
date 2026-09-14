@@ -426,6 +426,400 @@ describe('MediaController.stopAll', () => {
   });
 });
 
+/** Controller после успешного захвата при входе. */
+async function setupJoined(opts: { permissions?: FakePermissions } = {}) {
+  const t = setup(opts);
+  await t.controller.acquireInitial();
+  t.statusLog.length = 0;
+  return t;
+}
+
+type TrackChange = [TrackKind, FakeTrack | null];
+
+function recordTrackChanges(controller: MediaController): TrackChange[] {
+  const changes: TrackChange[] = [];
+  controller.onTrackChange((kind, track) => {
+    changes.push([kind, track as unknown as FakeTrack | null]);
+  });
+  return changes;
+}
+
+describe('MediaController.onTrackChange', () => {
+  it('stops notifying after unsubscribe', async () => {
+    const t = await setupJoined();
+    const listener = vi.fn();
+    const unsubscribe = t.controller.onTrackChange(listener);
+
+    await t.controller.setVideoEnabled(false);
+    unsubscribe();
+    await t.controller.setVideoEnabled(true);
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith('video', null);
+  });
+});
+
+describe('MediaController.setVideoEnabled', () => {
+  describe('turning the camera off', () => {
+    it('waits for listeners before stop(), then reports off', async () => {
+      const t = await setupJoined();
+      const track = t.tracks().video!;
+      let stoppedBeforeListenerFinished: boolean | null = null;
+      t.controller.onTrackChange(async (kind, next) => {
+        expect([kind, next]).toEqual(['video', null]);
+        await Promise.resolve();
+        await Promise.resolve();
+        stoppedBeforeListenerFinished = track.stop.mock.calls.length > 0;
+      });
+
+      await t.controller.setVideoEnabled(false);
+
+      expect(stoppedBeforeListenerFinished).toBe(false);
+      expect(track.stop).toHaveBeenCalledTimes(1);
+      expect(track.readyState).toBe('ended');
+      expect(t.controller.getTracks().video).toBeNull();
+      expect(t.preview.getTracks()).toEqual([]);
+      expect(t.statusLog).toEqual([['video', 'off']]);
+      expect(t.controller.getPublicState()).toEqual({ audio: true, video: false });
+      expect(t.devices.getUserMedia).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not stop the track while a listener promise is still pending (50 ms)', async () => {
+      vi.useFakeTimers();
+      try {
+        const t = await setupJoined();
+        const track = t.tracks().video!;
+        t.controller.onTrackChange(() => new Promise((resolve) => setTimeout(resolve, 50)));
+
+        const disabling = t.controller.setVideoEnabled(false);
+        await vi.advanceTimersByTimeAsync(49);
+        expect(track.stop).not.toHaveBeenCalled();
+        expect(t.statuses.video).toBe('on');
+
+        await vi.advanceTimersByTimeAsync(1);
+        await disabling;
+        expect(track.stop).toHaveBeenCalledTimes(1);
+        expect(t.statuses.video).toBe('off');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('still stops the track when listeners throw or reject', async () => {
+      const t = await setupJoined();
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const track = t.tracks().video!;
+      const healthy = vi.fn();
+      t.controller.onTrackChange(() => {
+        throw new Error('sync failure');
+      });
+      t.controller.onTrackChange(() => Promise.reject(new Error('async failure')));
+      t.controller.onTrackChange(healthy);
+
+      await t.controller.setVideoEnabled(false);
+
+      expect(healthy).toHaveBeenCalledWith('video', null);
+      expect(track.stop).toHaveBeenCalledTimes(1);
+      expect(t.statuses.video).toBe('off');
+      expect(warn).toHaveBeenCalledTimes(2);
+      warn.mockRestore();
+    });
+
+    it('reports off without a track (camera not found)', async () => {
+      const t = setup();
+      t.devices.inputs = ['audioinput'];
+      await t.controller.acquireInitial();
+      const changes = recordTrackChanges(t.controller);
+
+      await t.controller.setVideoEnabled(false);
+
+      expect(t.statuses.video).toBe('off');
+      expect(changes).toEqual([]);
+    });
+  });
+
+  describe('turning the camera on', () => {
+    it('acquires a new track, notifies listeners and puts only it into the preview', async () => {
+      const t = await setupJoined();
+      const oldTrack = t.tracks().video!;
+      await t.controller.setVideoEnabled(false);
+      t.statusLog.length = 0;
+      const changes = recordTrackChanges(t.controller);
+
+      await t.controller.setVideoEnabled(true);
+
+      const newTrack = t.tracks().video!;
+      expect(newTrack).not.toBe(oldTrack);
+      expect(newTrack.readyState).toBe('live');
+      expect(oldTrack.readyState).toBe('ended');
+      expect(t.devices.requests.at(-1)).toEqual({ video: VIDEO_CONSTRAINTS });
+      expect(changes).toEqual([['video', newTrack]]);
+      expect(t.preview.getTracks()).toEqual([newTrack]);
+      expect(t.statusLog).toEqual([
+        ['video', 'acquiring'],
+        ['video', 'on'],
+      ]);
+    });
+
+    it('reports on only after listeners have attached the new track', async () => {
+      const t = await setupJoined();
+      await t.controller.setVideoEnabled(false);
+      let statusDuringListener: DeviceStatus | null = null;
+      t.controller.onTrackChange(async () => {
+        await Promise.resolve();
+        statusDuringListener = t.statuses.video;
+      });
+
+      await t.controller.setVideoEnabled(true);
+
+      expect(statusDuringListener).toBe('acquiring');
+      expect(t.statuses.video).toBe('on');
+    });
+
+    it('a double setVideoEnabled(true) calls getUserMedia once', async () => {
+      const t = await setupJoined();
+      await t.controller.setVideoEnabled(false);
+      const before = t.devices.getUserMedia.mock.calls.length;
+
+      await Promise.all([t.controller.setVideoEnabled(true), t.controller.setVideoEnabled(true)]);
+
+      expect(t.devices.getUserMedia.mock.calls.length - before).toBe(1);
+      expect(t.liveTracks().filter((track) => track.kind === 'video')).toHaveLength(1);
+    });
+
+    it('does nothing when the camera is already on', async () => {
+      const t = await setupJoined();
+      const changes = recordTrackChanges(t.controller);
+
+      await t.controller.setVideoEnabled(true);
+
+      expect(t.devices.getUserMedia).toHaveBeenCalledTimes(1);
+      expect(changes).toEqual([]);
+      expect(t.statusLog).toEqual([]);
+    });
+
+    it('reports the error status and a notice when the camera cannot be acquired', async () => {
+      const t = await setupJoined();
+      await t.controller.setVideoEnabled(false);
+      t.devices.rejectWith('NotAllowedError', { kind: 'video' });
+      const changes = recordTrackChanges(t.controller);
+
+      await t.controller.setVideoEnabled(true);
+
+      expect(t.statuses.video).toBe('denied');
+      expect(t.notices).toEqual([{ text: 'Нет доступа к камере', tone: 'error' }]);
+      expect(changes).toEqual([]);
+      expect(t.preview.getTracks()).toEqual([]);
+    });
+
+    it('retries from an error status on the next click', async () => {
+      const t = setup();
+      t.devices.rejectWith('NotReadableError', { kind: 'video', once: true });
+      t.devices.rejectWith('NotReadableError', { kind: 'video', once: true });
+      await t.controller.acquireInitial();
+      expect(t.statuses.video).toBe('busy');
+
+      await t.controller.setVideoEnabled(true);
+
+      expect(t.statuses.video).toBe('on');
+      expect(t.preview.getTracks()).toEqual([t.tracks().video]);
+    });
+
+    it('stops a camera track that arrives after stopAll', async () => {
+      const t = await setupJoined();
+      await t.controller.setVideoEnabled(false);
+      t.devices.deferNext();
+      const enabling = t.controller.setVideoEnabled(true);
+      await vi.waitFor(() => {
+        expect(t.devices.pending).toHaveLength(1);
+      });
+
+      t.controller.stopAll();
+      t.devices.pending[0]!.grant();
+      await enabling;
+
+      expect(t.liveTracks()).toEqual([]);
+      expect(t.preview.getTracks()).toEqual([]);
+      expect(t.statuses).toEqual({ audio: 'off', video: 'off' });
+      expect(t.notices).toEqual([]);
+    });
+  });
+});
+
+describe('MediaController.setAudioEnabled', () => {
+  it('toggles the microphone via track.enabled without getUserMedia or track changes', async () => {
+    const t = await setupJoined();
+    const track = t.tracks().audio!;
+    const changes = recordTrackChanges(t.controller);
+
+    await t.controller.setAudioEnabled(false);
+    expect(track.enabled).toBe(false);
+    expect(t.controller.getPublicState()).toEqual({ audio: false, video: true });
+
+    await t.controller.setAudioEnabled(true);
+    expect(track.enabled).toBe(true);
+
+    expect(t.tracks().audio).toBe(track);
+    expect(track.stop).not.toHaveBeenCalled();
+    expect(t.devices.getUserMedia).toHaveBeenCalledTimes(1);
+    expect(changes).toEqual([]);
+    expect(t.statusLog).toEqual([
+      ['audio', 'off'],
+      ['audio', 'on'],
+    ]);
+  });
+
+  it('acquires the microphone from an error status and notifies listeners', async () => {
+    const t = setup();
+    t.devices.rejectWith('NotAllowedError', { once: true });
+    await t.controller.acquireInitial();
+    expect(t.statuses.audio).toBe('denied');
+    const changes = recordTrackChanges(t.controller);
+
+    await t.controller.setAudioEnabled(true);
+
+    const track = t.tracks().audio!;
+    expect(t.devices.requests.at(-1)).toEqual({ audio: AUDIO_CONSTRAINTS });
+    expect(changes).toEqual([['audio', track]]);
+    expect(t.statuses.audio).toBe('on');
+    expect(t.preview.getTracks()).toEqual([]);
+  });
+
+  it('reports the error status and a notice when the microphone is still unavailable', async () => {
+    const t = setup();
+    t.devices.inputs = ['videoinput'];
+    await t.controller.acquireInitial();
+    t.notices.length = 0;
+    t.devices.rejectWith('NotFoundError', { kind: 'audio' });
+
+    await t.controller.setAudioEnabled(true);
+
+    expect(t.statuses.audio).toBe('not-found');
+    expect(t.notices).toEqual([{ text: 'Микрофон не найден', tone: 'error' }]);
+  });
+
+  it('turning off without a track just reports off', async () => {
+    const t = setup();
+    t.devices.rejectWith('NotAllowedError');
+    await t.controller.acquireInitial();
+
+    await t.controller.setAudioEnabled(false);
+
+    expect(t.statuses.audio).toBe('off');
+  });
+});
+
+describe('MediaController: device lost', () => {
+  it('camera ended → listeners get null, preview is emptied, status lost, notice', async () => {
+    const t = await setupJoined();
+    const track = t.tracks().video!;
+    const changes = recordTrackChanges(t.controller);
+
+    track.dispatchEnded();
+
+    await vi.waitFor(() => {
+      expect(t.statuses.video).toBe('lost');
+    });
+    expect(changes).toEqual([['video', null]]);
+    expect(t.controller.getTracks().video).toBeNull();
+    expect(t.preview.getTracks()).toEqual([]);
+    expect(t.controller.getPublicState()).toEqual({ audio: true, video: false });
+    expect(t.notices).toEqual([
+      {
+        text: 'Камера отключена или стала недоступна. Проверьте устройство и включите камеру снова.',
+        tone: 'error',
+      },
+    ]);
+  });
+
+  it('microphone ended → status lost and notice', async () => {
+    const t = await setupJoined();
+    const changes = recordTrackChanges(t.controller);
+
+    t.tracks().audio!.dispatchEnded();
+
+    await vi.waitFor(() => {
+      expect(t.statuses.audio).toBe('lost');
+    });
+    expect(changes).toEqual([['audio', null]]);
+    expect(t.notices.at(-1)?.text).toBe(
+      'Микрофон отключён или стал недоступен. Проверьте устройство и включите микрофон снова.',
+    );
+  });
+
+  it('a lost camera can be turned on again', async () => {
+    const t = await setupJoined();
+    t.tracks().video!.dispatchEnded();
+    await vi.waitFor(() => {
+      expect(t.statuses.video).toBe('lost');
+    });
+
+    await t.controller.setVideoEnabled(true);
+
+    expect(t.statuses.video).toBe('on');
+    expect(t.preview.getTracks()).toEqual([t.tracks().video]);
+  });
+
+  it('ignores ended from a stale track', async () => {
+    const t = await setupJoined();
+    const oldTrack = t.tracks().video!;
+    await t.controller.setVideoEnabled(false);
+    await t.controller.setVideoEnabled(true);
+    t.statusLog.length = 0;
+    const changes = recordTrackChanges(t.controller);
+
+    oldTrack.dispatchEvent(new Event('ended'));
+    await t.controller.setAudioEnabled(true); // дождаться очереди
+
+    expect(t.statuses.video).toBe('on');
+    expect(t.statusLog).toEqual([]);
+    expect(changes).toEqual([]);
+    expect(t.notices).toEqual([]);
+  });
+
+  it('ignores ended that arrives after the camera was turned off in the same tick', async () => {
+    const t = await setupJoined();
+    const track = t.tracks().video!;
+
+    const disabling = t.controller.setVideoEnabled(false);
+    track.dispatchEnded();
+    await disabling;
+    await t.controller.setAudioEnabled(true);
+
+    expect(t.statuses.video).toBe('off');
+    expect(t.notices).toEqual([]);
+  });
+
+  it('ignores ended after stopAll', async () => {
+    const t = await setupJoined();
+    const track = t.tracks().video!;
+
+    t.controller.stopAll();
+    track.dispatchEnded();
+    await t.controller.setAudioEnabled(false);
+
+    expect(t.statuses.video).toBe('off');
+    expect(t.notices).toEqual([]);
+  });
+});
+
+it('never clones tracks', async () => {
+  const t = await setupJoined();
+  recordTrackChanges(t.controller);
+
+  await t.controller.setVideoEnabled(false);
+  await t.controller.setVideoEnabled(true);
+  await t.controller.setAudioEnabled(false);
+  await t.controller.setAudioEnabled(true);
+  t.tracks().video!.dispatchEnded();
+  await t.controller.setVideoEnabled(true);
+  t.controller.stopAll();
+
+  expect(t.devices.createdTracks.length).toBeGreaterThan(0);
+  for (const track of t.devices.createdTracks) expect(track.clone).not.toHaveBeenCalled();
+  expect(t.liveTracks()).toEqual([]);
+});
+
 describe('classify', () => {
   it.each([
     ['NotAllowedError', 'denied'],

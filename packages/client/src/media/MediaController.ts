@@ -1,5 +1,5 @@
 import { AUDIO_CONSTRAINTS, VIDEO_CONSTRAINTS, type MediaState } from '@vcr/shared';
-import { acquireNotice } from './mediaTexts';
+import { acquireNotice, deviceStatusLabel, lostNotice } from './mediaTexts';
 
 export type TrackKind = 'audio' | 'video';
 
@@ -107,6 +107,7 @@ export class MediaController {
    * controller пригодным для повторного входа («Повторить вход» после ROOM_FULL).
    */
   private generation = 0;
+  private readonly listeners = new Set<TrackChangeListener>();
 
   constructor(deps: MediaControllerDeps) {
     this.md = deps.mediaDevices;
@@ -150,6 +151,44 @@ export class MediaController {
     });
   }
 
+  /**
+   * Микрофон: on ↔ off через track.enabled — мгновенно и без повторного запроса разрешения.
+   * Из статусов ошибок включение — новый getUserMedia и trackChange.
+   */
+  setAudioEnabled(enabled: boolean): Promise<void> {
+    return this.enqueue(async () => {
+      const track = this.tracks.audio;
+      if (track) {
+        track.enabled = enabled;
+        this.setStatus('audio', enabled ? 'on' : 'off');
+        return;
+      }
+      if (enabled) await this.enableTrack('audio');
+      else this.setStatus('audio', 'off');
+    });
+  }
+
+  /** Камера: выключение — stop() (лампочка гаснет, FR-19), включение — новый getUserMedia. */
+  setVideoEnabled(enabled: boolean): Promise<void> {
+    return this.enqueue(async () => {
+      if (!enabled) return this.disableVideo();
+      // Повторный клик после успешного включения не должен захватывать камеру ещё раз.
+      if (this.tracks.video) return;
+      await this.enableTrack('video');
+    });
+  }
+
+  /**
+   * Подписка на смену трека (этап 4: sender.replaceTrack). Controller дожидается всех
+   * подписчиков, прежде чем остановить старый трек. Возвращает отписку.
+   */
+  onTrackChange(listener: TrackChangeListener): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
   /** Синхронно освобождает устройства; операции, начатые до вызова, свой результат отбросят. */
   stopAll(): void {
     this.generation += 1;
@@ -172,6 +211,69 @@ export class MediaController {
     if (this.statuses[kind] === status) return;
     this.statuses[kind] = status;
     this.onStatus(kind, status);
+  }
+
+  /**
+   * Порядок важен: сначала все отправители отцепляют трек (replaceTrack(null)), и только потом
+   * stop(). Иначе при повторном включении пришлось бы ренеготировать соединения (TDD §4.3).
+   */
+  private async disableVideo(): Promise<void> {
+    const track = this.tracks.video;
+    if (!track) return this.setStatus('video', 'off');
+    this.tracks.video = null;
+    track.removeEventListener('ended', this.onTrackEnded);
+    await this.emitTrackChange('video', null);
+    this.previewStream.removeTrack(track);
+    track.stop();
+    this.setStatus('video', 'off');
+  }
+
+  private async enableTrack(kind: TrackKind): Promise<void> {
+    const generation = this.generation;
+    this.setStatus(kind, 'acquiring');
+    const status = await this.acquireOne(kind, generation, false);
+    if (!status) return;
+    const track = this.tracks[kind];
+    if (status !== 'on' || !track) {
+      this.setStatus(kind, status);
+      this.onNotice(deviceStatusLabel(kind, status), 'error');
+      return;
+    }
+    await this.emitTrackChange(kind, track);
+    // За время ожидания подписчиков трек могли остановить (stopAll) или он завершился сам.
+    if (generation !== this.generation || this.tracks[kind] !== track) return;
+    this.setStatus(kind, 'on');
+  }
+
+  /** Трек завершился не по нашему stop(): устройство отключили или отозвали доступ (FR-20). */
+  private readonly onTrackEnded = (event: Event): void => {
+    const track = event.target as MediaStreamTrack;
+    const kind = track.kind as TrackKind;
+    if (this.tracks[kind] !== track) return; // устаревший трек
+    void this.enqueue(async () => {
+      if (this.tracks[kind] !== track) return; // выключили раньше, чем дошла очередь
+      const generation = this.generation;
+      this.tracks[kind] = null;
+      track.removeEventListener('ended', this.onTrackEnded);
+      await this.emitTrackChange(kind, null);
+      if (kind === 'video') this.previewStream.removeTrack(track);
+      track.stop();
+      if (generation !== this.generation) return;
+      this.setStatus(kind, 'lost');
+      this.onNotice(lostNotice(kind), 'error');
+    });
+  };
+
+  /** Ошибка подписчика не мешает освободить устройство: приоритет — погасить камеру. */
+  private async emitTrackChange(kind: TrackKind, track: MediaStreamTrack | null): Promise<void> {
+    const results = await Promise.allSettled(
+      [...this.listeners].map(async (listener) => listener(kind, track)),
+    );
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        console.warn(`Track change listener failed (${kind})`, result.reason);
+      }
+    }
   }
 
   /** До выдачи разрешения label пустые, но kind виден — этого достаточно. */
@@ -298,6 +400,7 @@ export class MediaController {
         continue;
       }
       this.tracks[kind] = track;
+      track.addEventListener('ended', this.onTrackEnded);
       if (kind === 'video') this.previewStream.addTrack(track);
     }
     return fresh;
@@ -307,6 +410,7 @@ export class MediaController {
     const track = this.tracks[kind];
     if (!track) return;
     this.tracks[kind] = null;
+    track.removeEventListener('ended', this.onTrackEnded);
     if (kind === 'video') this.previewStream.removeTrack(track);
     track.stop();
   }

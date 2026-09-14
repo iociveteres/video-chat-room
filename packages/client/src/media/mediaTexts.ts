@@ -42,6 +42,16 @@ export interface MediaNotice {
   tone: 'info' | 'error';
 }
 
+const LOST_NOTICES: Record<TrackKind, string> = {
+  video: 'Камера отключена или стала недоступна. Проверьте устройство и включите камеру снова.',
+  audio: 'Микрофон отключён или стал недоступен. Проверьте устройство и включите микрофон снова.',
+};
+
+/** Тост при потере устройства во время звонка (TDD этапа 3 §4.3, FR-20). */
+export function lostNotice(kind: TrackKind): string {
+  return LOST_NOTICES[kind];
+}
+
 export function deviceStatusLabel(kind: TrackKind, status: DeviceStatus): string {
   return STATUS_LABELS[kind][status];
 }
