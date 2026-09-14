@@ -1,15 +1,24 @@
 import { expect, test, type Page } from '@playwright/test';
-import { callConfig, expectRemoteVideoPlaying, peerIds } from './helpers/call';
 import {
+  callConfig,
+  expectGrowing,
+  expectRemoteVideoPlaying,
+  inboundRtp,
+  peerIds,
+  remoteTile,
+} from './helpers/call';
+import {
+  joinMeshRoom,
   localVideoSettings,
   MESH_NAMES,
   openMeshRoom,
   participantIds,
+  peerSummary,
   signalCountsByName,
   waitForFullMesh,
   type MeshParticipant,
 } from './helpers/mesh';
-import { createdTracks, currentTracks } from './helpers/media';
+import { createdTracks, currentTracks, deviceToggle } from './helpers/media';
 import {
   closeParticipants,
   createRoom,
@@ -21,7 +30,7 @@ import {
 // Полная комната в mesh (TDD этапа 5 §11.4, сценарии 1–4).
 test.afterEach(closeParticipants);
 
-const [ALEX, BORIS, VERA, , DINA] = MESH_NAMES;
+const [ALEX, BORIS, VERA, GLEB, DINA] = MESH_NAMES;
 
 function videoGrid(page: Page) {
   return page.getByRole('region', { name: 'Видео' });
@@ -154,4 +163,156 @@ test('simultaneous join: B and C click «Войти» at once, all 3 pairs conne
     [[ALEX, VERA].sort().join('–')]: 1,
     [[BORIS, VERA].sort().join('–')]: 1,
   });
+});
+
+// Изоляция отказов и сетка (TDD этапа 5 §11.4, сценарии 5–8).
+
+/** Всего offer, отправленных участниками комнаты: новые offer означали бы ренеготиацию. */
+async function totalOffers(participants: readonly MeshParticipant[], ids: Record<string, string>) {
+  let total = 0;
+  for (const me of participants) {
+    for (const count of Object.values(await signalCountsByName(me, ids))) total += count.offer;
+  }
+  return total;
+}
+
+function idOf(ids: Record<string, string>, name: string): string {
+  const id = ids[name];
+  if (!id) throw new Error(`Unknown participant ${name}`);
+  return id;
+}
+
+test('C leaves from the middle: the other three keep their pairs, no renegotiation', async ({
+  browser,
+}) => {
+  const { participants } = await openMeshRoom(browser, 4);
+  const [a, b, c, d] = participants as [
+    MeshParticipant,
+    MeshParticipant,
+    MeshParticipant,
+    MeshParticipant,
+  ];
+  await waitForFullMesh(participants);
+  const ids = await participantIds(participants);
+  const rest = [a, b, d];
+  const offersBefore = await totalOffers(rest, ids);
+
+  await c.page.close();
+
+  for (const me of rest) {
+    await expect(videoGrid(me.page)).toHaveAttribute('data-count', '3', { timeout: 2_000 });
+    await expect(remoteTile(me.page, VERA)).toHaveCount(0);
+  }
+  for (const [me, peer] of [
+    [a, b],
+    [a, d],
+    [b, d],
+  ] as const) {
+    await expectGrowing(
+      async () => (await inboundRtp(me.page, idOf(ids, peer.name), 'video')).bytesReceived,
+    );
+  }
+  await waitForFullMesh(rest);
+  expect(await totalOffers(rest, ids)).toBe(offersBefore);
+});
+
+test('camera off and on at A: B, C and D show the placeholder, then decode again without new offers', async ({
+  browser,
+}) => {
+  const { participants } = await openMeshRoom(browser, 4);
+  const [a, ...others] = participants as [MeshParticipant, ...MeshParticipant[]];
+  await waitForFullMesh(participants);
+  const ids = await participantIds(participants);
+  const offersBefore = await totalOffers(participants, ids);
+  const aId = idOf(ids, ALEX);
+
+  await deviceToggle(a.page, 'Камера').click();
+  for (const me of others) {
+    await expect(remoteTile(me.page, ALEX)).toContainText('Камера выключена', { timeout: 2_000 });
+  }
+
+  await deviceToggle(a.page, 'Камера').click();
+  for (const me of others) {
+    await expectRemoteVideoPlaying(me.page, ALEX);
+    await expectGrowing(async () => (await inboundRtp(me.page, aId, 'video')).framesDecoded);
+  }
+  expect(await totalOffers(participants, ids)).toBe(offersBefore);
+});
+
+test('one broken pair: only C and D see «Не удалось установить медиасоединение» for each other', async ({
+  browser,
+}) => {
+  // Порядок входа A, B, D, C: следующее соединение D — именно пара с C.
+  const { url, participants: first } = await openMeshRoom(browser, 3, [ALEX, BORIS, GLEB]);
+  const [a, b, d] = first as [MeshParticipant, MeshParticipant, MeshParticipant];
+  await waitForFullMesh(first);
+  await d.page.evaluate(() => {
+    const Native = window.RTCPeerConnection;
+    const w = window as unknown as { __relayNextPeerConnection?: boolean };
+    w.__relayNextPeerConnection = true;
+    // relay без TURN не соединится никогда: пара C–D уйдёт в failed по таймауту соединения.
+    window.RTCPeerConnection = class extends Native {
+      constructor(config?: RTCConfiguration) {
+        const relay = w.__relayNextPeerConnection === true;
+        w.__relayNextPeerConnection = false;
+        super(relay ? { ...config, iceTransportPolicy: 'relay' } : config);
+      }
+    };
+  });
+  const c = await joinMeshRoom(browser, url, VERA);
+  const participants = [a, b, c, d];
+  const ids = await participantIds(participants);
+
+  const FAILED = 'Не удалось установить медиасоединение';
+  // PEER_CONNECT_TIMEOUT_MS — 20 с.
+  await expect(remoteTile(c.page, GLEB)).toContainText(FAILED, { timeout: 30_000 });
+  await expect(remoteTile(d.page, VERA)).toContainText(FAILED, { timeout: 10_000 });
+
+  const statusOf = async (me: MeshParticipant, peer: string) =>
+    (await peerSummary(me)).find((p) => p.participantId === idOf(ids, peer))?.status;
+  expect(await statusOf(c, GLEB)).toBe('failed');
+  expect(await statusOf(d, VERA)).toBe('failed');
+  // Остальные 5 пар живы с обеих сторон.
+  const healthyPairs: [MeshParticipant, MeshParticipant][] = [
+    [a, b],
+    [a, c],
+    [a, d],
+    [b, c],
+    [b, d],
+  ];
+  const directions = healthyPairs.flatMap(([p, q]): [MeshParticipant, MeshParticipant][] => [
+    [p, q],
+    [q, p],
+  ]);
+  for (const [x, y] of directions) {
+    expect(await statusOf(x, y.name), `${x.name} → ${y.name}`).toBe('connected');
+    await expect(remoteTile(x.page, y.name)).not.toContainText(FAILED);
+  }
+});
+
+test('grid layout for 1–4 participants at 1024 and 1440 px', async ({ browser }) => {
+  const WIDTHS = [
+    { width: 1024, height: 768 },
+    { width: 1440, height: 900 },
+  ];
+  const { url, participants } = await openMeshRoom(browser, 1);
+  const [a] = participants as [MeshParticipant];
+  // Кадры fake-камеры меняются: видео скрыто, сравниваются раскладка, фон, рамки и подписи.
+  // Не mask: маска закрыла бы и подписи с подсказкой, лежащие поверх <video>.
+  await a.page.addStyleTag({ content: '.video-grid video { opacity: 0 !important; }' });
+
+  for (const name of [BORIS, VERA, GLEB, undefined]) {
+    const room = participants.slice();
+    if (room.length > 1) await waitForFullMesh(room);
+    for (const other of room.slice(1)) await expectRemoteVideoPlaying(a.page, other.name);
+
+    for (const viewport of WIDTHS) {
+      await a.page.setViewportSize(viewport);
+      await expect(videoGrid(a.page)).toHaveScreenshot(
+        `grid-${room.length}-${viewport.width}.png`,
+        { animations: 'disabled' },
+      );
+    }
+    if (name) participants.push(await joinMeshRoom(browser, url, name));
+  }
 });
