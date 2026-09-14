@@ -17,6 +17,8 @@ export interface VideoTileProps {
   /** Не воспроизводить звук элемента — для self-view, чтобы не было эха. */
   muted?: boolean;
   statusLabel?: string;
+  /** Этап 4: предупреждение поверх показанного видео, например «Связь нестабильна…». */
+  overlayLabel?: string;
   /** Меняется при смене трека в том же MediaStream — повод перепривязать srcObject. */
   streamVersion?: number;
 }
@@ -36,6 +38,7 @@ export function VideoTile({
   mirrored = false,
   muted = false,
   statusLabel,
+  overlayLabel,
   streamVersion = 0,
 }: VideoTileProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -61,6 +64,11 @@ export function VideoTile({
     <figure className="tile" aria-label={label}>
       <video ref={videoRef} className={videoClass} autoPlay playsInline muted={muted} />
       {!showVideo && <AvatarPlaceholder name={name} statusLabel={statusLabel} />}
+      {showVideo && overlayLabel && (
+        <span className="tile__overlay" role="status">
+          {overlayLabel}
+        </span>
+      )}
       <figcaption className="tile__label">
         <span className="tile__name">{label}</span>
         {audioMuted && (
