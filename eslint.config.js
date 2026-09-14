@@ -5,6 +5,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import { defineConfig, globalIgnores } from 'eslint/config';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
+import noPeerConnectionTrackMutation from './eslint-rules/no-peer-connection-track-mutation.js';
 
 export default defineConfig(
   globalIgnores(['**/dist/', '**/coverage/', '**/playwright-report/', '**/test-results/', 'prds/']),
@@ -43,7 +44,26 @@ export default defineConfig(
     rules: {
       // Аналог react/no-danger: dangerouslySetInnerHTML запрещён как класс XSS (TDD §10).
       '@eslint-react/dom-no-dangerously-set-innerhtml': 'error',
+      // Только callback-ack: продолжение после await emitWithAck выполнилось бы уже после событий
+      // из той же пачки пакетов, и в state появились бы «призраки» (TDD этапа 1 §4.3, этапа 4 §12).
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "MemberExpression[property.name='emitWithAck']",
+          message:
+            'emitWithAck запрещён на клиенте: используйте socket.timeout(ms).emit(event, payload, callback).',
+        },
+      ],
     },
+  },
+
+  // Инварианты звонка (TDD этапа 4 §3.2, §12): без ренеготиации. Правило типовое — только для TS.
+  {
+    files: ['**/*.{ts,tsx}'],
+    plugins: {
+      vcr: { rules: { 'no-peer-connection-track-mutation': noPeerConnectionTrackMutation } },
+    },
+    rules: { 'vcr/no-peer-connection-track-mutation': 'error' },
   },
 
   prettier,
