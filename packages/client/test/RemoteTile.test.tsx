@@ -3,7 +3,7 @@ import { act, render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { PeerStatus } from '../src/call/PeerSession';
 import { PEER_STATUS_TEXT, remoteTileView } from '../src/features/call/RemoteTile';
-import { VideoStage } from '../src/features/call/VideoStage';
+import { VideoGrid } from '../src/features/call/VideoGrid';
 import { RoomSession } from '../src/session/RoomSession';
 import { AppStateProvider } from '../src/state/AppStateProvider';
 import { fakeMedia, flushMicrotasks } from './helpers/FakeMedia';
@@ -52,7 +52,7 @@ async function renderStage(participants: ParticipantDTO[] = [maria, alex]) {
         }))
       }
     >
-      <VideoStage />
+      <VideoGrid />
     </AppStateProvider>,
   );
 
@@ -91,7 +91,7 @@ async function renderStage(participants: ParticipantDTO[] = [maria, alex]) {
   };
 }
 
-describe('RemoteTile in VideoStage', () => {
+describe('RemoteTile in VideoGrid', () => {
   it('renders the self tile and a tile per remote participant in join order', async () => {
     const t = await renderStage([maria, boris, alex]);
 

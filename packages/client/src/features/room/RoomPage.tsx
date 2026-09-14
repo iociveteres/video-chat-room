@@ -1,7 +1,7 @@
 import { navigate } from '../../app/router';
 import { useAppState, useRoomSession } from '../../state/AppStateProvider';
 import { AutoplayBanner, AutoplayGuard } from '../call/AutoplayGuard';
-import { VideoStage } from '../call/VideoStage';
+import { VideoGrid } from '../call/VideoGrid';
 import { ControlBar } from '../controls/ControlBar';
 import { NameForm } from '../lobby/NameForm';
 import { StatusScreen } from '../status/StatusScreen';
@@ -66,7 +66,7 @@ export function RoomPage({ roomId }: RoomPageProps) {
               <MediaAccessBanner />
               <AutoplayBanner />
               <div className="room__stage">
-                <VideoStage />
+                <VideoGrid />
               </div>
               <ControlBar onLeave={goHome} />
             </AutoplayGuard>
