@@ -1,7 +1,7 @@
 # Implementation Plan
 
 > **Фича:** `mesh-group-call` (этап 5 из 5) · **PRD:** `prd-video-chat-room.md` v1.0 · **TDD:** [`design-mesh-group-call-v2.md`](design-mesh-group-call-v2.md)
-> **Зависит от:** этапов 1–4 ([`room-skeleton`](../room-skeleton/impl-room-skeleton.md), [`chat-system-messages`](../chat-system-messages/impl-chat-system-messages.md), [`local-media-controls`](../local-media-controls/impl-local-media-controls.md), [`webrtc-peer-call`](../webrtc-peer-call/impl-webrtc-peer-call.md)). Завершается релизом v1.0.
+> **Зависит от:** этапов 1–4 ([`room-skeleton`](../room-skeleton/impl-room-skeleton.md), [`chat-system-messages`](../chat-system-messages/impl-chat-system-messages.md), [`local-media-controls`](../local-media-controls/impl-local-media-controls.md), [`webrtc-peer-call`](../webrtc-peer-call/impl-webrtc-peer-call.md)).
 > Каждая задача верхнего уровня — один PR, ≤ 1 рабочего дня. `FR-N` — номер функционального требования из PRD §4 (в скобках ID тест-задания), `US-N` — user story из PRD §3, `§N` — раздел TDD, `I1–I4` — инварианты этапа 4.
 
 - [ ] 1. `PeerManager`: изоляция отказов между парами
@@ -96,22 +96,3 @@
   - 11.1 Потолок битрейта: через 10 с у каждого видео-отправителя `maxBitrate === 1_000_000`, средний `outbound-rtp(video)` за 10 с ≤ 1.1 Mbps
   - 11.2 (Should) Смешанная комната 2 × Chromium + 1 × Firefox (`firefoxUserPrefs`) → все пары `connected`
   - _Requirements: FR-10, FR-11, PRD §7 (Chrome / Firefox / Edge 100+), Design: §4.3, §11.4 (9–10)_
-
-- [ ] 12. Замеры производительности в LAN
-  - Подтверждение целевых метрик на реальных устройствах
-  - _После задач 7, 10_
-  - 12.1 Задержка glass-to-glass: секундомер на экране A, камера B, 10 замеров, p95 ≤ 500 мс; оценка по `getStats` через `DiagnosticsOverlay`
-  - 12.2 Время подключения 4-го участника < 3 с p95; FPS ≥ 20 на плитке; потери < 1%
-  - 12.3 CPU < 70% на эталонном ноутбуке за 10-минутный звонок, `qualityLimitationReason` в основном `none` (модель ноутбука — TBD-2)
-  - 12.4 При невыполнении — применить рычаги §9.3 (снижение `maxBitrate`, TBD-1 — захват 480×270@20 при N = 4) отдельной задачей
-  - 12.5 Отчёт с результатами в `prds/mesh-group-call/`
-  - _Requirements: US-6 (задержка ≤ 500 мс), PRD §7 (задержка в LAN), Design: §9.1, §9.2, §9.3, §13, §14 (TBD-1, TBD-2)_
-
-- [ ] 13. Релиз v1.0
-  - Итоговая приёмка продукта и тег
-  - _После задач 1–12_
-  - 13.1 Пороги покрытия: `shared` ≥ 95%, `server` ≥ 90%, `client/state` + `client/call` + `client/media` ≥ 90%, `client` ≥ 75%
-  - 13.2 Ручной release checklist: 4 устройства (Chrome, Firefox, Edge; Windows + macOS), 10-минутный звонок; лампочка камеры; обрыв Wi-Fi у одного → звонок продолжается, системное сообщение ≤ 15 с; 5-й → «Комната заполнена» и лампочка гаснет; отказ в доступе у одного → силуэт и имя у остальных
-  - 13.3 Прогон всех US-1…US-13 по Gherkin-критериям PRD
-  - 13.4 Зелёные lint, typecheck, unit, integration, property-based и E2E → git-тег `v1.0.0`
-  - _Requirements: FR-1…FR-40, US-1…US-13, Design: §1.2 (итоговая трассировка), §11.5, §11.6, §12_
