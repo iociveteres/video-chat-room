@@ -15,3 +15,12 @@ export const ACK_TIMEOUT_MS = 5_000;
 
 /** Сколько клиент ждёт установки соединения с сервером. */
 export const CONNECT_TIMEOUT_MS = 5_000;
+
+/** Максимальная длина сообщения чата, в code points после нормализации (FR-40). */
+export const MESSAGE_MAX_LENGTH = 1000;
+
+/** Сколько последних сообщений хранит комната и получает новичок при входе (FR-23). */
+export const CHAT_HISTORY_LIMIT = 200;
+
+/** Антифлуд на участника: token bucket — всплеск до burst, дальше refillPerSecond (FR-40). */
+export const CHAT_RATE_LIMIT = { burst: 5, refillPerSecond: 1 } as const;

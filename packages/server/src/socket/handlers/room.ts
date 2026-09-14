@@ -30,6 +30,7 @@ export function registerRoomHandlers(ctx: HandlerContext, socket: AppSocket): vo
         id: randomUUID(),
         socketId: socket.id,
         name: name.value,
+        chatBucket: ctx.createChatBucket(),
       });
       if (!result.ok) return ack(ackError('ROOM_FULL'));
       socket.data.roomId = roomId;
@@ -40,9 +41,23 @@ export function registerRoomHandlers(ctx: HandlerContext, socket: AppSocket): vo
 
       const self = toParticipantDTO(result.participant);
       ctx.logger.info('Participant joined', { roomId, participantId: self.id });
+      // Снимок истории берётся в том же синхронном блоке, что и socket.join: всё более раннее
+      // попадает в ack, всё более позднее придёт новичку событием — без дыр и дублей (TDD §4.2).
+      const joinedMessage = ctx.chat.appendSystemMessage(
+        roomId,
+        'participant-joined',
+        result.participant,
+      );
       // Порядок «ack новичку → broadcast остальным» зафиксирован контрактом (этап 4 строит на нём offer).
-      ack({ ok: true, self, participants: ctx.registry.listParticipants(roomId) });
+      ack({
+        ok: true,
+        self,
+        participants: ctx.registry.listParticipants(roomId),
+        messages: ctx.chat.getHistory(roomId),
+      });
+      // socket.to исключает новичка: своё participant-joined он получает только в истории.
       socket.to(adapterRoom(roomId)).emit('participant:joined', { participant: self });
+      socket.to(adapterRoom(roomId)).emit('chat:message', { message: joinedMessage });
     }),
   );
 

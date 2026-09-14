@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { checkEnvironment } from './app/environment';
 import { navigate, useRoute } from './app/router';
 import { LobbyPage } from './features/lobby/LobbyPage';
+import { NoticeToast } from './features/notice/NoticeToast';
 import { RoomPage } from './features/room/RoomPage';
 import { StatusScreen } from './features/status/StatusScreen';
 import { AppStateProvider } from './state/AppStateProvider';
@@ -15,6 +16,7 @@ export function App() {
   return (
     <AppStateProvider>
       <Routes />
+      <NoticeToast />
     </AppStateProvider>
   );
 }

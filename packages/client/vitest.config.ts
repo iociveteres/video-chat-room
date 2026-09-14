@@ -6,5 +6,7 @@ export default defineProject({
     name: '@vcr/client',
     environment: 'jsdom',
     setupFiles: ['./test/setup.ts'],
+    // Фиксированный пояс: время сообщений форматируется в локальной TZ (formatTime).
+    env: { TZ: 'Europe/Moscow' },
   },
 });

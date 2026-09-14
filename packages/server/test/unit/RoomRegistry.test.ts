@@ -1,5 +1,6 @@
 import { MAX_PARTICIPANTS } from '@vcr/shared';
 import { describe, expect, it } from 'vitest';
+import { TokenBucket } from '../../src/chat/TokenBucket';
 import { RoomRegistry } from '../../src/rooms/RoomRegistry';
 
 function createRegistry(opts: { maxParticipants?: number } = {}) {
@@ -8,7 +9,8 @@ function createRegistry(opts: { maxParticipants?: number } = {}) {
   let seq = 0;
   const join = (roomId: string, name = `user-${seq}`) => {
     seq += 1;
-    return registry.join(roomId, { id: `p${seq}`, socketId: `s${seq}`, name });
+    const chatBucket = new TokenBucket({ capacity: 5, refillPerSecond: 1 });
+    return registry.join(roomId, { id: `p${seq}`, socketId: `s${seq}`, name, chatBucket });
   };
   return { registry, join };
 }
@@ -27,8 +29,10 @@ describe('RoomRegistry', () => {
 
     expect(registry.roomCount).toBe(1);
     expect(registry.getRoom('r1')).toBe(room);
-    expect(room).toMatchObject({ id: 'r1', createdAt: 1_000 });
-    expect(participant).toEqual({ id: 'p1', socketId: 's1', name: 'Алекс', joinedAt: 1_001 });
+    expect(room).toMatchObject({ id: 'r1', createdAt: 1_000, messages: [] });
+    const { chatBucket, ...fields } = participant;
+    expect(fields).toEqual({ id: 'p1', socketId: 's1', name: 'Алекс', joinedAt: 1_001 });
+    expect(chatBucket).toBeInstanceOf(TokenBucket);
     expect(registry.getParticipant('r1', 'p1')).toBe(participant);
   });
 

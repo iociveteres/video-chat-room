@@ -2,12 +2,15 @@ export const LOG_LEVELS = ['debug', 'info', 'warn', 'error', 'silent'] as const;
 export type LogLevel = (typeof LOG_LEVELS)[number];
 
 /**
- * Закрытый набор полей лога. Имена участников и другие PII сюда не попадают (TDD §10):
- * идентифицируем только по roomId и participantId.
+ * Закрытый набор полей лога. Имена участников, тексты сообщений и другие PII сюда
+ * не попадают (TDD §10): идентифицируем только по roomId, participantId и messageId.
  */
 export interface LogFields {
   roomId?: string;
   participantId?: string;
+  messageId?: string;
+  /** Длина сообщения в code points — вместо самого текста. */
+  length?: number;
   socketId?: string;
   reason?: string;
   path?: string;

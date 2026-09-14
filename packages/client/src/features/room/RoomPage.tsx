@@ -1,10 +1,9 @@
 import { navigate } from '../../app/router';
 import { useAppState, useRoomSession } from '../../state/AppStateProvider';
-import { selectParticipants } from '../../state/selectors';
 import { NameForm } from '../lobby/NameForm';
 import { StatusScreen } from '../status/StatusScreen';
-import { ParticipantList } from './ParticipantList';
 import { RoomHeader } from './RoomHeader';
+import { RoomSidebar } from './RoomSidebar';
 
 export interface RoomPageProps {
   roomId: string;
@@ -45,8 +44,12 @@ export function RoomPage({ roomId }: RoomPageProps) {
     case 'joined':
       return (
         <div className="room">
-          <RoomHeader roomId={roomId} onLeave={goHome} />
-          <ParticipantList participants={selectParticipants(state)} selfId={state.selfId} />
+          <div className="room__main">
+            <RoomHeader roomId={roomId} onLeave={goHome} />
+            {/* Область видео: сетка участников появится на этапах 3–5. */}
+            <div className="room__stage" aria-hidden="true" />
+          </div>
+          <RoomSidebar />
         </div>
       );
 

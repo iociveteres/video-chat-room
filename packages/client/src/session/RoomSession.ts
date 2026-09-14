@@ -1,12 +1,13 @@
 import {
   ACK_TIMEOUT_MS,
   CONNECT_TIMEOUT_MS,
+  type ChatSendAck,
   type JoinAck,
   type ServerErrorCode,
 } from '@vcr/shared';
 import type { Dispatch } from 'react';
 import { createSocket as defaultCreateSocket, type AppClientSocket } from '../net/createSocket';
-import type { AppAction, JoinFailure } from '../state/actions';
+import type { AppAction, ChatSendFailure, JoinFailure } from '../state/actions';
 
 /** Сколько ждём ack на room:leave, прежде чем просто закрыть соединение. */
 export const LEAVE_ACK_TIMEOUT_MS = 2_000;
@@ -28,10 +29,34 @@ export function mapJoinError(code: ServerErrorCode): JoinFailure {
     case 'INVALID_PAYLOAD':
     case 'INVALID_ROOM_ID':
     case 'ALREADY_JOINED':
+    case 'INVALID_MESSAGE':
+    case 'RATE_LIMITED':
       // Клиент такие запросы не отправляет — это признак бага клиента.
       console.error(`room:join rejected with ${code}`);
       return 'INTERNAL';
     case 'NOT_IN_ROOM':
+    case 'INTERNAL':
+      return 'INTERNAL';
+  }
+}
+
+/** Реакция клиента на отказ chat:send (TDD §6.4). */
+export function mapChatSendError(code: ServerErrorCode): ChatSendFailure {
+  switch (code) {
+    case 'INVALID_MESSAGE':
+      return 'INVALID_MESSAGE';
+    case 'RATE_LIMITED':
+      return 'RATE_LIMITED';
+    case 'NOT_IN_ROOM':
+      return 'NOT_IN_ROOM';
+    case 'INVALID_PAYLOAD':
+    case 'INVALID_NAME':
+    case 'INVALID_ROOM_ID':
+    case 'ALREADY_JOINED':
+    case 'ROOM_FULL':
+      // Клиент такие запросы не отправляет — это признак бага клиента.
+      console.error(`chat:send rejected with ${code}`);
+      return 'INTERNAL';
     case 'INTERNAL':
       return 'INTERNAL';
   }
@@ -81,6 +106,9 @@ export class RoomSession {
     });
     socket.on('participant:left', ({ participantId }) => {
       if (isCurrent()) this.dispatch({ type: 'PARTICIPANT_LEFT', participantId });
+    });
+    socket.on('chat:message', ({ message }) => {
+      if (isCurrent()) this.dispatch({ type: 'CHAT_MESSAGE_RECEIVED', message });
     });
     socket.on('connect_error', () => {
       if (isCurrent() && this.status === 'joining') this.fail('SERVER_UNAVAILABLE');
@@ -138,6 +166,33 @@ export class RoomSession {
     else this.dispatch({ type: 'JOIN_FAILED', reason: 'SERVER_UNAVAILABLE' });
   }
 
+  /**
+   * Отправляет сообщение в чат. Promise<boolean> нужен только полю ввода — вернуть текст при
+   * ошибке; само сообщение попадёт в state через broadcast chat:message, как и у остальных.
+   * Ошибки показываются тостом через CHAT_SEND_FAILED; NOT_IN_ROOM — молча (идёт выход).
+   */
+  sendChatMessage(text: string): Promise<boolean> {
+    const socket = this.socket;
+    if (!socket || this.status !== 'joined') return Promise.resolve(false);
+
+    return new Promise((resolve) => {
+      const fail = (code: ChatSendFailure) => {
+        resolve(false);
+        // После выхода или обрыва тост об отправке уже не нужен.
+        if (this.socket === socket) this.dispatch({ type: 'CHAT_SEND_FAILED', code });
+      };
+
+      // Callback-ack, как и room:join: без лишнего микротаска между ack и событиями.
+      socket
+        .timeout(ACK_TIMEOUT_MS)
+        .emit('chat:send', { text }, (err: Error | null, res: ChatSendAck) => {
+          if (err) return fail('TIMEOUT');
+          if (!res.ok) return fail(mapChatSendError(res.error.code));
+          resolve(true);
+        });
+    });
+  }
+
   /** Освобождает ресурсы без изменения state. Сессию можно использовать снова. */
   dispose(): void {
     this.teardown();
@@ -154,7 +209,12 @@ export class RoomSession {
         if (!res.ok) return this.fail(mapJoinError(res.error.code));
 
         this.status = 'joined';
-        this.dispatch({ type: 'JOIN_SUCCEEDED', self: res.self, participants: res.participants });
+        this.dispatch({
+          type: 'JOIN_SUCCEEDED',
+          self: res.self,
+          participants: res.participants,
+          messages: res.messages,
+        });
       });
   }
 
