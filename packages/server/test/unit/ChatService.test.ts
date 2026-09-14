@@ -28,6 +28,7 @@ function setup(opts: { historyLimit?: number } = {}) {
         capacity: CHAT_RATE_LIMIT.burst,
         refillPerSecond: CHAT_RATE_LIMIT.refillPerSecond,
       }),
+      signalBucket: new TokenBucket({ capacity: 1, refillPerSecond: 1 }),
     });
     if (!result.ok) throw new Error('join failed');
     return result.participant;

@@ -1,4 +1,5 @@
 import { CHAT_HISTORY_LIMIT, type ChatMessage, type ParticipantDTO } from '@vcr/shared';
+import type { PeerStatus } from '../call/PeerSession';
 import type { DeviceStatus } from '../media/MediaController';
 import type { AppAction, ChatSendFailure, JoinFailure } from './actions';
 
@@ -38,6 +39,11 @@ export interface Notice {
   tone: 'info' | 'error';
 }
 
+/** Этап 4: состояние пары с удалённым участником. RTCPeerConnection и потоки — в PeerManager. */
+export interface PeerState {
+  status: PeerStatus;
+}
+
 /**
  * Сериализуемое состояние приложения. Сокеты и прочие side effects сюда не попадают —
  * ими владеет RoomSession (TDD §3.1, принцип 3).
@@ -57,6 +63,10 @@ export interface AppState {
   notice: Notice | null;
   /** Не сбрасывается при выходе: controller сам сообщает off после stopAll(). */
   localMedia: LocalMediaState;
+  /** Этап 4: по id удалённых участников; self здесь не бывает. */
+  peers: Record<string, PeerState>;
+  /** Этап 4: браузер заблокировал воспроизведение звука до жеста пользователя (FR-37). */
+  autoplayBlocked: boolean;
 }
 
 const emptyChat: ChatState = { messages: [], messageIds: {} };
@@ -72,6 +82,8 @@ export const initialAppState: AppState = {
   chat: emptyChat,
   notice: null,
   localMedia: { audio: 'off', video: 'off', videoTrackVersion: 0 },
+  peers: {},
+  autoplayBlocked: false,
 };
 
 /** Всё, что относится к конкретному пребыванию в комнате. */
@@ -81,6 +93,8 @@ const noRoomData = {
   participantIds: [],
   participantsById: {},
   chat: emptyChat,
+  peers: {},
+  autoplayBlocked: false,
 } satisfies Partial<AppState>;
 
 /** Тексты тостов об ошибке отправки (TDD §6.4). NOT_IN_ROOM молча игнорируется. */
@@ -177,10 +191,12 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       const { participantId } = action;
       if (!(participantId in state.participantsById)) return state;
       const { [participantId]: _removed, ...participantsById } = state.participantsById;
+      const { [participantId]: _peer, ...peers } = state.peers;
       return {
         ...state,
         participantIds: state.participantIds.filter((id) => id !== participantId),
         participantsById,
+        peers,
       };
     }
 
@@ -252,6 +268,25 @@ export function appReducer(state: AppState, action: AppAction): AppState {
           [participant.id]: { ...participant, media: { audio, video } },
         },
       };
+    }
+
+    case 'PEER_STATUS_CHANGED': {
+      const { participantId, status } = action;
+      // Опоздавший статус ушедшего участника не должен воскрешать запись.
+      if (state.phase.kind !== 'joined' || participantId === state.selfId) return state;
+      if (!(participantId in state.participantsById)) return state;
+      if (state.peers[participantId]?.status === status) return state;
+      return { ...state, peers: { ...state.peers, [participantId]: { status } } };
+    }
+
+    case 'AUTOPLAY_BLOCKED': {
+      if (state.phase.kind !== 'joined' || state.autoplayBlocked) return state;
+      return { ...state, autoplayBlocked: true };
+    }
+
+    case 'AUTOPLAY_RESUMED': {
+      if (!state.autoplayBlocked) return state;
+      return { ...state, autoplayBlocked: false };
     }
   }
 }

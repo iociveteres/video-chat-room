@@ -26,12 +26,12 @@ describe('HTTP without client dist (dev mode)', () => {
   });
 
   it('reports rooms from the registry', async () => {
-    const chatBucket = new TokenBucket({ capacity: 1, refillPerSecond: 1 });
     t.server.registry.join('r1', {
       id: 'p1',
       socketId: 's1',
       name: 'A',
-      chatBucket,
+      chatBucket: new TokenBucket({ capacity: 1, refillPerSecond: 1 }),
+      signalBucket: new TokenBucket({ capacity: 1, refillPerSecond: 1 }),
       media: { audio: true, video: true },
     });
     try {

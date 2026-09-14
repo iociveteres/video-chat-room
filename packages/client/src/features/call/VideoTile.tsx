@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { AvatarPlaceholder } from './AvatarPlaceholder';
 import { MicOffIcon } from './icons';
+import { useFreshFrame } from './useFreshFrame';
 
 export interface VideoTileProps {
   /** Имя участника: в заглушке и, если не задан label, в подписи поверх плитки. */
@@ -17,8 +18,17 @@ export interface VideoTileProps {
   /** Не воспроизводить звук элемента — для self-view, чтобы не было эха. */
   muted?: boolean;
   statusLabel?: string;
+  /** Этап 4: предупреждение поверх показанного видео, например «Связь нестабильна…». */
+  overlayLabel?: string;
   /** Меняется при смене трека в том же MediaStream — повод перепривязать srcObject. */
   streamVersion?: number;
+  /**
+   * Этап 4: запуск воспроизведения через реестр autoplay (удалённые плитки). Должна быть
+   * стабильной; возвращает отмену регистрации. Без неё плитка вызывает play() сама.
+   */
+  registerVideo?: (el: HTMLVideoElement) => () => void;
+  /** Этап 4: после включения камеры показывать видео только с новым кадром (useFreshFrame). */
+  waitForFreshFrame?: boolean;
 }
 
 /**
@@ -36,23 +46,35 @@ export function VideoTile({
   mirrored = false,
   muted = false,
   statusLabel,
+  overlayLabel,
   streamVersion = 0,
+  registerVideo,
+  waitForFreshFrame = false,
 }: VideoTileProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const hasFreshFrame = useFreshFrame(videoRef, waitForFreshFrame && showVideo);
+  // Ждём кадр: <video> остаётся под заглушкой, но прозрачным, а не visibility: hidden, —
+  // иначе браузер может не отдавать ему кадры, и requestVideoFrameCallback не сработает.
+  const pending = waitForFreshFrame && showVideo && !hasFreshFrame;
+  const videoVisible = showVideo && !pending;
 
   useEffect(() => {
     const el = videoRef.current;
-    if (!el) return;
+    if (!el) return undefined;
     // Перепривязка при смене streamVersion: часть браузеров не подхватывает addTrack
     // на уже привязанном MediaStream.
     el.srcObject = stream;
-    if (stream) el.play().catch(() => {});
-  }, [stream, streamVersion]);
+    if (!stream) return undefined;
+    if (registerVideo) return registerVideo(el);
+    el.play().catch(() => {});
+    return undefined;
+  }, [stream, streamVersion, registerVideo]);
 
   const videoClass = [
     'tile__video',
     mirrored && 'tile__video--mirrored',
     !showVideo && 'tile__video--hidden',
+    pending && 'tile__video--pending',
   ]
     .filter(Boolean)
     .join(' ');
@@ -60,7 +82,12 @@ export function VideoTile({
   return (
     <figure className="tile" aria-label={label}>
       <video ref={videoRef} className={videoClass} autoPlay playsInline muted={muted} />
-      {!showVideo && <AvatarPlaceholder name={name} statusLabel={statusLabel} />}
+      {!videoVisible && <AvatarPlaceholder name={name} statusLabel={statusLabel} />}
+      {videoVisible && overlayLabel && (
+        <span className="tile__overlay" role="status">
+          {overlayLabel}
+        </span>
+      )}
       <figcaption className="tile__label">
         <span className="tile__name">{label}</span>
         {audioMuted && (

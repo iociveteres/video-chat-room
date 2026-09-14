@@ -51,3 +51,15 @@ export const VIDEO_CONSTRAINTS: Readonly<MediaConstraintsSpec> = {
   height: { ideal: 360 },
   frameRate: { ideal: 24, max: 30 },
 };
+
+/** Потолок длины SDP в сигнале: реальный offer на 2 m-line весит ~5–10 KB (TDD этапа 4 §4.1). */
+export const SDP_MAX_LENGTH = 32_000;
+
+/** Потолок длины строки ICE-кандидата. */
+export const ICE_CANDIDATE_MAX_LENGTH = 1_000;
+
+/** Антифлуд сигналинга на участника: на старте соединения кандидаты идут пачкой. */
+export const SIGNAL_RATE_LIMIT = { burst: 100, refillPerSecond: 50 } as const;
+
+/** Сколько клиент ждёт медиасоединения с пиром, прежде чем показать failed. */
+export const PEER_CONNECT_TIMEOUT_MS = 20_000;

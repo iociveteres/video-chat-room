@@ -4,6 +4,7 @@ import {
   type ChatMessage,
   type ParticipantDTO,
   type ServerErrorCode,
+  type SignalData,
 } from '@vcr/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LEAVE_ACK_TIMEOUT_MS, mapChatSendError, RoomSession } from '../src/session/RoomSession';
@@ -12,6 +13,7 @@ import type { AppAction, ChatSendFailure, JoinFailure } from '../src/state/actio
 import { appReducer, initialAppState, type AppState } from '../src/state/appReducer';
 import { selectParticipants } from '../src/state/selectors';
 import { fakeMedia, flushMicrotasks, FakeMediaDevices, type FakeTrack } from './helpers/FakeMedia';
+import { fakeOfferSdp, fakePeers } from './helpers/FakePeerConnection';
 import { FakeSocket } from './helpers/FakeSocket';
 
 const ALL_ON = { audio: true, video: true };
@@ -47,6 +49,7 @@ function setup(devices = new FakeMediaDevices()) {
   let state: AppState = initialAppState;
   const sockets: FakeSocket[] = [];
   const media = fakeMedia(devices);
+  const peers = fakePeers();
   const session = new RoomSession({
     dispatch: (action) => {
       actions.push(action);
@@ -58,6 +61,7 @@ function setup(devices = new FakeMediaDevices()) {
       return socket.asSocket();
     },
     createMedia: media.createMedia,
+    createPeers: peers.createPeers,
   });
 
   const lastSocket = () => {
@@ -89,6 +93,7 @@ function setup(devices = new FakeMediaDevices()) {
   return {
     session,
     devices,
+    pcs: peers.pcs,
     actions,
     sockets,
     lastSocket,
@@ -138,12 +143,10 @@ describe('RoomSession.join', () => {
 
     command.respond({ ok: true, self: alex, participants: [maria, alex], messages: [joinedMaria] });
 
-    expect(t.actions.at(-1)).toEqual({
-      type: 'JOIN_SUCCEEDED',
-      self: alex,
-      participants: [maria, alex],
-      messages: [joinedMaria],
-    });
+    expect(t.actions.slice(-2)).toEqual([
+      { type: 'JOIN_SUCCEEDED', self: alex, participants: [maria, alex], messages: [joinedMaria] },
+      { type: 'PEER_STATUS_CHANGED', participantId: maria.id, status: 'connecting' },
+    ]);
     expect(t.getState().phase).toEqual({ kind: 'joined' });
     expect(t.session.roomId).toBe('room1');
     // Состояние не менялось с room:join — media:update не нужен.
@@ -210,8 +213,9 @@ describe('RoomSession.join', () => {
     socket.serverEmit('participant:joined', { participant: boris });
     socket.serverEmit('participant:left', { participantId: maria.id });
 
-    expect(t.actions.slice(-2)).toEqual([
+    expect(t.actions.slice(-3)).toEqual([
       { type: 'PARTICIPANT_JOINED', participant: boris },
+      { type: 'PEER_STATUS_CHANGED', participantId: boris.id, status: 'connecting' },
       { type: 'PARTICIPANT_LEFT', participantId: maria.id },
     ]);
     expect(selectParticipants(t.getState())).toEqual([alex, boris]);
@@ -333,7 +337,12 @@ describe('RoomSession.join', () => {
 
       vi.advanceTimersByTime(CONNECT_TIMEOUT_MS + ACK_TIMEOUT_MS);
 
-      expect(t.types()).toEqual(['JOIN_REQUESTED', 'JOIN_CONNECTING', 'JOIN_SUCCEEDED']);
+      expect(t.types()).toEqual([
+        'JOIN_REQUESTED',
+        'JOIN_CONNECTING',
+        'JOIN_SUCCEEDED',
+        'PEER_STATUS_CHANGED',
+      ]);
     });
 
     it('ack timeout → SERVER_UNAVAILABLE; a late ack is ignored', async () => {
@@ -886,6 +895,180 @@ describe('RoomSession: chat', () => {
   ])('mapChatSendError(%s) → %s', (code, failure) => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     expect(mapChatSendError(code)).toBe(failure);
+  });
+});
+
+describe('RoomSession: WebRTC peers (stage 4)', () => {
+  const OFFER: SignalData = { type: 'offer', sdp: fakeOfferSdp() };
+  const ANSWER: SignalData = { type: 'answer', sdp: 'v=0\r\ns=answer\r\n' };
+
+  const signals = (socket: FakeSocket) =>
+    socket.emitted.filter((c) => c.event === 'signal').map((c) => c.args[0]);
+  const peerActions = (actions: AppAction[]) =>
+    actions.filter((a) => a.type === 'PEER_STATUS_CHANGED');
+
+  it('JOIN_SUCCEEDED → connecting for every remote participant, no connection yet', async () => {
+    const t = setup();
+
+    await t.joinSuccessfully([maria, boris, alex]);
+
+    expect(peerActions(t.actions)).toEqual([
+      { type: 'PEER_STATUS_CHANGED', participantId: maria.id, status: 'connecting' },
+      { type: 'PEER_STATUS_CHANGED', participantId: boris.id, status: 'connecting' },
+    ]);
+    expect(t.getState().peers).toEqual({
+      [maria.id]: { status: 'connecting' },
+      [boris.id]: { status: 'connecting' },
+    });
+    // Я вошёл последним — только отвечаю (I1), сессии создаются по offer.
+    expect(t.pcs.instances).toEqual([]);
+  });
+
+  it('participant:joined → offerer: connecting, then an offer to the newcomer over the socket', async () => {
+    const t = setup();
+    const socket = await t.joinSuccessfully();
+
+    socket.serverEmit('participant:joined', { participant: boris });
+    await flushMicrotasks();
+
+    expect(t.getState().peers[boris.id]).toEqual({ status: 'connecting' });
+    expect(t.pcs.instances).toHaveLength(1);
+    expect(t.pcs.last.configuration).toMatchObject({
+      bundlePolicy: 'max-bundle',
+      rtcpMuxPolicy: 'require',
+    });
+    expect(signals(socket)).toEqual([
+      { to: boris.id, data: { type: 'offer', sdp: t.pcs.last.localDescription!.sdp } },
+    ]);
+
+    socket.serverEmit('signal', { from: boris.id, data: ANSWER });
+    await flushMicrotasks();
+    expect(t.pcs.last.remoteDescription).toMatchObject({ type: 'answer' });
+  });
+
+  it('offer from an old-timer → answerer with local tracks, answer back to the sender', async () => {
+    const t = setup();
+    const socket = await t.joinSuccessfully();
+
+    socket.serverEmit('signal', { from: maria.id, data: OFFER });
+    await flushMicrotasks();
+
+    const pc = t.pcs.last;
+    expect(pc.getTransceivers().map((tx) => tx.sender.track)).toEqual([
+      t.tracks().audio,
+      t.tracks().video,
+    ]);
+    expect(signals(socket)).toEqual([
+      { to: maria.id, data: { type: 'answer', sdp: pc.localDescription!.sdp } },
+    ]);
+    expect(t.session.peers.getRemoteStream(maria.id)).not.toBeNull();
+  });
+
+  it('participant:left closes the connection and removes the peer from state', async () => {
+    const t = setup();
+    const socket = await t.joinSuccessfully();
+    socket.serverEmit('signal', { from: maria.id, data: OFFER });
+    await flushMicrotasks();
+    const pc = t.pcs.last;
+
+    socket.serverEmit('participant:left', { participantId: maria.id });
+
+    expect(pc.signalingState).toBe('closed');
+    expect(t.getState().peers).toEqual({});
+    expect(t.session.peers.getRemoteStream(maria.id)).toBeNull();
+    expect(peerActions(t.actions).map((a) => a.status)).not.toContain('closed');
+  });
+
+  it('camera off detaches the track from the connection before stopping it', async () => {
+    const t = setup();
+    const socket = await t.joinSuccessfully();
+    socket.serverEmit('signal', { from: maria.id, data: OFFER });
+    await flushMicrotasks();
+    const camera = t.tracks().video!;
+    const videoTx = t.pcs.last.getTransceivers()[1]!;
+    const replace = vi.spyOn(videoTx.sender, 'replaceTrack');
+
+    t.session.toggleVideo();
+    await flushMicrotasks();
+
+    expect(replace).toHaveBeenCalledWith(null);
+    expect(videoTx.sender.track).toBeNull();
+    expect(replace.mock.invocationCallOrder[0]).toBeLessThan(
+      camera.stop.mock.invocationCallOrder[0]!,
+    );
+    expect(t.pcs.instances).toHaveLength(1);
+    expect(signals(socket).map((s) => (s as { data: SignalData }).data.type)).toEqual(['answer']);
+  });
+
+  it('ignores signal and participant:joined before the join ack', async () => {
+    const t = setup();
+    const socket = await t.startJoin();
+    socket.serverConnect();
+
+    socket.serverEmit('signal', { from: maria.id, data: OFFER });
+    socket.serverEmit('participant:joined', { participant: boris });
+    await flushMicrotasks();
+
+    expect(t.pcs.instances).toEqual([]);
+  });
+
+  it('ignores signals after leaving and from a stale socket', async () => {
+    const t = setup();
+    const first = await t.joinSuccessfully();
+    first.serverDisconnect();
+    first.serverEmit('signal', { from: maria.id, data: OFFER });
+
+    const second = await t.joinSuccessfully();
+    t.session.leave();
+    second.serverEmit('signal', { from: maria.id, data: OFFER });
+    second.serverEmit('participant:joined', { participant: boris });
+    await flushMicrotasks();
+
+    expect(t.pcs.instances).toEqual([]);
+  });
+
+  it.each<[string, (t: ReturnType<typeof setup>, socket: FakeSocket) => void]>([
+    ['leave()', (t) => t.session.leave()],
+    // pagehide, JOIN_FAILED и dispose идут тем же teardown(), что и эти два пути.
+    ['connection loss', (_t, socket) => socket.serverDisconnect()],
+  ])('%s closes all connections before releasing devices', async (_label, exit) => {
+    const t = setup();
+    const socket = await t.joinSuccessfully();
+    socket.serverEmit('signal', { from: maria.id, data: OFFER });
+    socket.serverEmit('participant:joined', { participant: boris });
+    await flushMicrotasks();
+    const [answerer, offerer] = t.pcs.instances;
+    const close = vi.spyOn(offerer!, 'close');
+    const camera = t.tracks().video!;
+
+    exit(t, socket);
+
+    expect(answerer!.signalingState).toBe('closed');
+    expect(offerer!.signalingState).toBe('closed');
+    expect(close.mock.invocationCallOrder[0]).toBeLessThan(
+      camera.stop.mock.invocationCallOrder[0]!,
+    );
+    expect(t.getState().peers).toEqual({});
+    expect(t.session.peers.getRemoteStream(maria.id)).toBeNull();
+  });
+
+  it('works again after leaving: a new join creates new connections', async () => {
+    const t = setup();
+    const first = await t.joinSuccessfully();
+    first.serverEmit('participant:joined', { participant: boris });
+    await flushMicrotasks();
+    t.session.leave();
+
+    const second = await t.joinSuccessfully();
+    second.serverEmit('participant:joined', { participant: boris });
+    await flushMicrotasks();
+    // Подписка на смену треков восстановлена: выключение камеры доходит до нового соединения.
+    t.session.toggleVideo();
+    await flushMicrotasks();
+
+    expect(t.pcs.instances).toHaveLength(2);
+    expect(t.pcs.last.getTransceivers()[1]!.sender.track).toBeNull();
+    expect(signals(second)).toHaveLength(1);
   });
 });
 

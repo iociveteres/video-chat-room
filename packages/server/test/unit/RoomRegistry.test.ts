@@ -3,14 +3,22 @@ import { describe, expect, it } from 'vitest';
 import { TokenBucket } from '../../src/chat/TokenBucket';
 import { RoomRegistry } from '../../src/rooms/RoomRegistry';
 
-function createRegistry(opts: { maxParticipants?: number } = {}) {
+function createRegistry(opts: { maxParticipants?: number; now?: () => number } = {}) {
   let clock = 1_000;
-  const registry = new RoomRegistry({ ...opts, now: () => clock++ });
+  const registry = new RoomRegistry({ now: () => clock++, ...opts });
   let seq = 0;
   const join = (roomId: string, name = `user-${seq}`, media = { audio: true, video: true }) => {
     seq += 1;
     const chatBucket = new TokenBucket({ capacity: 5, refillPerSecond: 1 });
-    return registry.join(roomId, { id: `p${seq}`, socketId: `s${seq}`, name, chatBucket, media });
+    const signalBucket = new TokenBucket({ capacity: 100, refillPerSecond: 50 });
+    return registry.join(roomId, {
+      id: `p${seq}`,
+      socketId: `s${seq}`,
+      name,
+      chatBucket,
+      signalBucket,
+      media,
+    });
   };
   return { registry, join };
 }
@@ -30,15 +38,18 @@ describe('RoomRegistry', () => {
     expect(registry.roomCount).toBe(1);
     expect(registry.getRoom('r1')).toBe(room);
     expect(room).toMatchObject({ id: 'r1', createdAt: 1_000, messages: [] });
-    const { chatBucket, ...fields } = participant;
+    const { chatBucket, signalBucket, ...fields } = participant;
     expect(fields).toEqual({
       id: 'p1',
       socketId: 's1',
       name: 'Алекс',
       joinedAt: 1_001,
+      joinSeq: 0,
       media: { audio: true, video: true },
     });
     expect(chatBucket).toBeInstanceOf(TokenBucket);
+    expect(signalBucket).toBeInstanceOf(TokenBucket);
+    expect(signalBucket).not.toBe(chatBucket);
     expect(registry.getParticipant('r1', 'p1')).toBe(participant);
   });
 
@@ -108,6 +119,32 @@ describe('RoomRegistry', () => {
     expect(second).not.toBe(first);
     expect(second.createdAt).toBeGreaterThan(first.createdAt);
     expect(registry.listParticipants('r1')).toHaveLength(1);
+  });
+
+  describe('joinSeq', () => {
+    it('is strictly increasing across rooms, leaves and a rejected ROOM_FULL join', () => {
+      const { registry, join } = createRegistry({ maxParticipants: 2 });
+      const seqs = [
+        joinOk(join('r1')).participant.joinSeq,
+        joinOk(join('r2')).participant.joinSeq,
+        joinOk(join('r1')).participant.joinSeq,
+      ];
+      expect(join('r1')).toEqual({ ok: false, reason: 'ROOM_FULL' });
+      registry.leave('r1', 'p1');
+      registry.leave('r2', 'p2');
+      seqs.push(joinOk(join('r2')).participant.joinSeq);
+
+      expect(seqs).toEqual([0, 1, 2, 3]);
+    });
+
+    it('orders joins that land on the same millisecond', () => {
+      const { join } = createRegistry({ now: () => 5_000 });
+      const first = joinOk(join('r1')).participant;
+      const second = joinOk(join('r1')).participant;
+
+      expect(second.joinedAt).toBe(first.joinedAt);
+      expect(second.joinSeq).toBeGreaterThan(first.joinSeq);
+    });
   });
 
   it('allows duplicate names as distinct participants', () => {

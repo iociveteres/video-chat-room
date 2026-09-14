@@ -1,0 +1,125 @@
+import { PEER_CONNECT_TIMEOUT_MS } from '@vcr/shared';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  DEFAULT_ICE_SERVERS,
+  getPeerConnectTimeoutMs,
+  getRtcConfiguration,
+  parseIceServers,
+} from '../src/call/rtcConfig';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+});
+
+describe('parseIceServers', () => {
+  it('parses a valid JSON array of RTCIceServer', () => {
+    const raw = JSON.stringify([
+      { urls: 'stun:127.0.0.1:9' },
+      { urls: ['turn:turn.example.com:3478'], username: 'u', credential: 'p' },
+    ]);
+
+    expect(parseIceServers(raw)).toEqual([
+      { urls: 'stun:127.0.0.1:9' },
+      { urls: ['turn:turn.example.com:3478'], username: 'u', credential: 'p' },
+    ]);
+  });
+
+  it('drops unknown fields of a server', () => {
+    expect(parseIceServers('[{"urls":"stun:a:1","credentialType":"password"}]')).toEqual([
+      { urls: 'stun:a:1' },
+    ]);
+  });
+
+  it('accepts an empty array: host candidates only', () => {
+    expect(parseIceServers('[]')).toEqual([]);
+  });
+
+  it.each([undefined, '', '   '])('returns null without warning for an unset value %j', (raw) => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    expect(parseIceServers(raw)).toBeNull();
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['broken JSON', '[{"urls":'],
+    ['an object instead of an array', '{"urls":"stun:a:1"}'],
+    ['a server without urls', '[{"username":"u"}]'],
+    ['empty urls', '[{"urls":""}]'],
+    ['an empty urls array', '[{"urls":[]}]'],
+    ['non-string urls', '[{"urls":[1]}]'],
+    ['a non-string credential', '[{"urls":"turn:a:1","username":"u","credential":42}]'],
+    ['one bad server among good ones', '[{"urls":"stun:a:1"},null]'],
+  ])('returns null and warns for %s', (_label, raw) => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    expect(parseIceServers(raw)).toBeNull();
+    expect(warn).toHaveBeenCalledOnce();
+  });
+});
+
+describe('getRtcConfiguration', () => {
+  it('defaults to two Google STUN servers, all transports, max-bundle and rtcp-mux', () => {
+    expect(getRtcConfiguration({})).toEqual({
+      iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }],
+      iceTransportPolicy: 'all',
+      bundlePolicy: 'max-bundle',
+      rtcpMuxPolicy: 'require',
+    });
+  });
+
+  it('does not share the default servers with the returned configuration', () => {
+    const config = getRtcConfiguration({});
+    (config.iceServers![0]!.urls as string[]).push('stun:evil:1');
+
+    expect(DEFAULT_ICE_SERVERS[0]!.urls).toHaveLength(2);
+  });
+
+  it.each([
+    ['relay', 'relay'],
+    ['RELAY', 'all'],
+  ])('maps VITE_ICE_TRANSPORT_POLICY=%s to %s', (value, expected) => {
+    expect(getRtcConfiguration({ VITE_ICE_TRANSPORT_POLICY: value }).iceTransportPolicy).toBe(
+      expected,
+    );
+  });
+
+  it('reads import.meta.env by default', () => {
+    vi.stubEnv('VITE_ICE_TRANSPORT_POLICY', 'relay');
+    vi.stubEnv('VITE_ICE_SERVERS', '[{"urls":"stun:127.0.0.1:9"}]');
+
+    expect(getRtcConfiguration()).toMatchObject({
+      iceServers: [{ urls: 'stun:127.0.0.1:9' }],
+      iceTransportPolicy: 'relay',
+    });
+  });
+});
+
+describe('getPeerConnectTimeoutMs', () => {
+  it('defaults to PEER_CONNECT_TIMEOUT_MS when unset', () => {
+    expect(getPeerConnectTimeoutMs({})).toBe(PEER_CONNECT_TIMEOUT_MS);
+    expect(getPeerConnectTimeoutMs({ VITE_PEER_CONNECT_TIMEOUT_MS: ' ' })).toBe(
+      PEER_CONNECT_TIMEOUT_MS,
+    );
+  });
+
+  it('uses a positive integer from the env', () => {
+    expect(getPeerConnectTimeoutMs({ VITE_PEER_CONNECT_TIMEOUT_MS: '3000' })).toBe(3_000);
+  });
+
+  it.each(['0', '1.5', 'soon'])('falls back to the default and warns for %j', (raw) => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    expect(getPeerConnectTimeoutMs({ VITE_PEER_CONNECT_TIMEOUT_MS: raw })).toBe(
+      PEER_CONNECT_TIMEOUT_MS,
+    );
+    expect(warn).toHaveBeenCalledOnce();
+  });
+
+  it('reads import.meta.env by default', () => {
+    vi.stubEnv('VITE_PEER_CONNECT_TIMEOUT_MS', '1234');
+
+    expect(getPeerConnectTimeoutMs()).toBe(1_234);
+  });
+});

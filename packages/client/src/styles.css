@@ -131,17 +131,20 @@ button:disabled {
   min-height: 0;
 }
 
-/* Область видео. Этап 3 — одна плитка self-view; сетка появится на этапах 4–5. */
+/* Область видео. Этап 4 — плитки в flex-ряд с переносом; сетка 1–4 появится на этапе 5. */
 .video-stage {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
+  gap: 1rem;
   height: 100%;
 }
 
 .tile {
   position: relative;
-  width: min(100%, 48rem);
+  flex: 1 1 20rem;
+  max-width: 48rem;
   aspect-ratio: 16 / 9;
   margin: 0;
   overflow: hidden;
@@ -167,6 +170,11 @@ button:disabled {
   visibility: hidden;
 }
 
+/* Ждём свежий кадр (useFreshFrame): элемент получает кадры, но не виден под заглушкой. */
+.tile__video--pending {
+  opacity: 0;
+}
+
 .tile__label {
   position: absolute;
   left: 0.75rem;
@@ -185,6 +193,16 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.tile__overlay {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.375rem;
+  background: rgb(180 83 9 / 85%);
+  font-size: 0.875rem;
 }
 
 .tile__mic-off {
@@ -241,6 +259,14 @@ button:disabled {
   border: 1px solid #f59e0b;
   border-radius: 0.5rem;
   background: rgb(245 158 11 / 12%);
+}
+
+.autoplay-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 
 .participants__media {

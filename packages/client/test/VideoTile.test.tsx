@@ -71,6 +71,14 @@ describe('VideoTile', () => {
     expect(screen.getByRole('figure', { name: 'Вы' })).toBeInTheDocument();
   });
 
+  it('shows overlayLabel over the video only while the video is shown', () => {
+    const t = renderTile({ overlayLabel: 'Связь нестабильна…' });
+    expect(screen.getByRole('status')).toHaveTextContent('Связь нестабильна…');
+
+    t.rerenderWith({ overlayLabel: 'Связь нестабильна…', showVideo: false });
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
   it('shows the crossed-out microphone only when audio is muted', () => {
     const t = renderTile();
     expect(screen.queryByRole('img', { name: 'Микрофон выключен' })).toBeNull();

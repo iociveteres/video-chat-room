@@ -54,6 +54,8 @@ describe('appReducer', () => {
         chat: { messages: [], messageIds: {} },
         notice: null,
         localMedia: { audio: 'off', video: 'off', videoTrackVersion: 0 },
+        peers: {},
+        autoplayBlocked: false,
       });
     });
   });
@@ -116,6 +118,8 @@ describe('appReducer', () => {
         chat: { messages: [], messageIds: {} },
         notice: null,
         localMedia: { audio: 'off', video: 'off', videoTrackVersion: 0 },
+        peers: {},
+        autoplayBlocked: false,
       });
     });
 
@@ -449,6 +453,83 @@ describe('appReducer', () => {
         participant: { ...boris, media: { audio: true, video: false } },
       });
       expect(next.participantsById[boris.id]?.media).toEqual({ audio: true, video: false });
+    });
+  });
+});
+
+describe('appReducer: peers and autoplay (stage 4)', () => {
+  const withMaria = (status: 'connecting' | 'connected' | 'failed') =>
+    reduce(joined, { type: 'PEER_STATUS_CHANGED', participantId: maria.id, status });
+
+  describe('PEER_STATUS_CHANGED', () => {
+    it('stores and updates the status of a remote participant', () => {
+      expect(withMaria('connecting').peers).toEqual({ [maria.id]: { status: 'connecting' } });
+      expect(
+        reduce(withMaria('connecting'), {
+          type: 'PEER_STATUS_CHANGED',
+          participantId: maria.id,
+          status: 'connected',
+        }).peers,
+      ).toEqual({ [maria.id]: { status: 'connected' } });
+    });
+
+    it('returns the same state for an unchanged status', () => {
+      const state = withMaria('failed');
+      expect(
+        appReducer(state, {
+          type: 'PEER_STATUS_CHANGED',
+          participantId: maria.id,
+          status: 'failed',
+        }),
+      ).toBe(state);
+    });
+
+    it.each<[string, AppState, string]>([
+      ['self', joined, alex.id],
+      ['an unknown participant (already left)', joined, boris.id],
+      ['joining', joining, maria.id],
+    ])('is ignored for %s', (_label, state, participantId) => {
+      expect(
+        appReducer(state, { type: 'PEER_STATUS_CHANGED', participantId, status: 'connected' }),
+      ).toBe(state);
+    });
+  });
+
+  it('PARTICIPANT_LEFT removes the peer entry; a late status does not bring it back', () => {
+    const state = reduce(
+      withMaria('connected'),
+      { type: 'PARTICIPANT_JOINED', participant: boris },
+      { type: 'PEER_STATUS_CHANGED', participantId: boris.id, status: 'connecting' },
+      { type: 'PARTICIPANT_LEFT', participantId: maria.id },
+      { type: 'PEER_STATUS_CHANGED', participantId: maria.id, status: 'failed' },
+    );
+
+    expect(state.peers).toEqual({ [boris.id]: { status: 'connecting' } });
+  });
+
+  it.each<[string, AppAction]>([
+    ['LEFT_ROOM', { type: 'LEFT_ROOM' }],
+    ['CONNECTION_LOST', { type: 'CONNECTION_LOST' }],
+  ])('%s resets peers and autoplayBlocked', (_label, action) => {
+    const state = reduce(withMaria('connected'), { type: 'AUTOPLAY_BLOCKED' }, action);
+
+    expect(state.peers).toEqual({});
+    expect(state.autoplayBlocked).toBe(false);
+  });
+
+  describe('AUTOPLAY_BLOCKED / AUTOPLAY_RESUMED', () => {
+    it('toggles autoplayBlocked in joined; repeats return the same state', () => {
+      const blocked = reduce(joined, { type: 'AUTOPLAY_BLOCKED' });
+      expect(blocked.autoplayBlocked).toBe(true);
+      expect(appReducer(blocked, { type: 'AUTOPLAY_BLOCKED' })).toBe(blocked);
+
+      const resumed = reduce(blocked, { type: 'AUTOPLAY_RESUMED' });
+      expect(resumed.autoplayBlocked).toBe(false);
+      expect(appReducer(resumed, { type: 'AUTOPLAY_RESUMED' })).toBe(resumed);
+    });
+
+    it('ignores AUTOPLAY_BLOCKED outside joined', () => {
+      expect(appReducer(joining, { type: 'AUTOPLAY_BLOCKED' })).toBe(joining);
     });
   });
 });

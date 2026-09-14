@@ -3,7 +3,7 @@ import http from 'node:http';
 import https from 'node:https';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
-import { CHAT_RATE_LIMIT } from '@vcr/shared';
+import { CHAT_RATE_LIMIT, SIGNAL_RATE_LIMIT } from '@vcr/shared';
 import express, { type ErrorRequestHandler, type Express } from 'express';
 import { Server } from 'socket.io';
 import { ChatService } from './chat/ChatService';
@@ -27,7 +27,7 @@ export const CONTENT_SECURITY_POLICY = [
   "frame-ancestors 'none'",
 ].join('; ');
 
-export interface ChatRateLimit {
+export interface RateLimit {
   burst: number;
   refillPerSecond: number;
 }
@@ -45,7 +45,9 @@ export interface AppServerOptions {
   logger?: Logger;
   registry?: RoomRegistry;
   /** Антифлуд чата на участника; по умолчанию CHAT_RATE_LIMIT. false отключает (только тесты). */
-  chatRateLimit?: ChatRateLimit | false;
+  chatRateLimit?: RateLimit | false;
+  /** Антифлуд сигналинга на участника; по умолчанию SIGNAL_RATE_LIMIT. false отключает (только тесты). */
+  signalRateLimit?: RateLimit | false;
 }
 
 export interface AppServerHandle {
@@ -81,7 +83,8 @@ export function createAppServer(opts: AppServerOptions): AppServerHandle {
     registry,
     chat,
     logger,
-    createChatBucket: chatBucketFactory(opts.chatRateLimit ?? CHAT_RATE_LIMIT),
+    createChatBucket: bucketFactory(opts.chatRateLimit ?? CHAT_RATE_LIMIT),
+    createSignalBucket: bucketFactory(opts.signalRateLimit ?? SIGNAL_RATE_LIMIT),
   });
 
   return {
@@ -101,7 +104,7 @@ export function createAppServer(opts: AppServerOptions): AppServerHandle {
   };
 }
 
-function chatBucketFactory(limit: ChatRateLimit | false): () => TokenBucket {
+function bucketFactory(limit: RateLimit | false): () => TokenBucket {
   // Бесконечный бакет никогда не пустеет: Infinity - 1 === Infinity.
   const opts = limit
     ? { capacity: limit.burst, refillPerSecond: limit.refillPerSecond }

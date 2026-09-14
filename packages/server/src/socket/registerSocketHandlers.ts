@@ -1,6 +1,7 @@
 import { registerChatHandlers } from './handlers/chat';
 import { registerMediaHandlers } from './handlers/media';
 import { registerRoomHandlers } from './handlers/room';
+import { registerSignalHandlers } from './handlers/signal';
 import type { HandlerContext } from './types';
 
 export function registerSocketHandlers(ctx: HandlerContext): void {
@@ -9,5 +10,6 @@ export function registerSocketHandlers(ctx: HandlerContext): void {
     registerRoomHandlers(ctx, socket);
     registerChatHandlers(ctx, socket);
     registerMediaHandlers(ctx, socket);
+    registerSignalHandlers(ctx, socket);
   });
 }
