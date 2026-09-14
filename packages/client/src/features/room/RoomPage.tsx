@@ -1,5 +1,6 @@
 import { navigate } from '../../app/router';
 import { useAppState, useRoomSession } from '../../state/AppStateProvider';
+import { VideoStage } from '../call/VideoStage';
 import { NameForm } from '../lobby/NameForm';
 import { StatusScreen } from '../status/StatusScreen';
 import { RoomHeader } from './RoomHeader';
@@ -46,8 +47,9 @@ export function RoomPage({ roomId }: RoomPageProps) {
         <div className="room">
           <div className="room__main">
             <RoomHeader roomId={roomId} onLeave={goHome} />
-            {/* Область видео: сетка участников появится на этапах 3–5. */}
-            <div className="room__stage" aria-hidden="true" />
+            <div className="room__stage">
+              <VideoStage />
+            </div>
           </div>
           <RoomSidebar />
         </div>
