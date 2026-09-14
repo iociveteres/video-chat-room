@@ -28,6 +28,8 @@ export function mapJoinError(code: ServerErrorCode): JoinFailure {
     case 'INVALID_PAYLOAD':
     case 'INVALID_ROOM_ID':
     case 'ALREADY_JOINED':
+    case 'INVALID_MESSAGE':
+    case 'RATE_LIMITED':
       // Клиент такие запросы не отправляет — это признак бага клиента.
       console.error(`room:join rejected with ${code}`);
       return 'INTERNAL';

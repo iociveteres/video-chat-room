@@ -41,7 +41,8 @@ export function registerRoomHandlers(ctx: HandlerContext, socket: AppSocket): vo
       const self = toParticipantDTO(result.participant);
       ctx.logger.info('Participant joined', { roomId, participantId: self.id });
       // Порядок «ack новичку → broadcast остальным» зафиксирован контрактом (этап 4 строит на нём offer).
-      ack({ ok: true, self, participants: ctx.registry.listParticipants(roomId) });
+      // TODO(chat-system-messages, задача 4): заменить заглушку историей из ChatService.
+      ack({ ok: true, self, participants: ctx.registry.listParticipants(roomId), messages: [] });
       socket.to(adapterRoom(roomId)).emit('participant:joined', { participant: self });
     }),
   );

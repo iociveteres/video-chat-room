@@ -172,6 +172,8 @@ describe('RoomSession.join', () => {
       ['INVALID_PAYLOAD', 'INTERNAL'],
       ['INVALID_ROOM_ID', 'INTERNAL'],
       ['ALREADY_JOINED', 'INTERNAL'],
+      ['INVALID_MESSAGE', 'INTERNAL'],
+      ['RATE_LIMITED', 'INTERNAL'],
       ['NOT_IN_ROOM', 'INTERNAL'],
       ['INTERNAL', 'INTERNAL'],
     ])('maps %s to JOIN_FAILED(%s)', (code, reason) => {
