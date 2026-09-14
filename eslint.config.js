@@ -33,7 +33,13 @@ export default defineConfig(
   },
 
   {
-    files: ['packages/server/**/*.ts', 'packages/*/scripts/**/*.mjs', 'e2e/**/*.ts', '*.{js,ts}'],
+    files: [
+      'packages/server/**/*.ts',
+      'packages/protocol-tests/**/*.ts',
+      'packages/*/scripts/**/*.mjs',
+      'e2e/**/*.ts',
+      '*.{js,ts}',
+    ],
     languageOptions: { globals: globals.node },
   },
 

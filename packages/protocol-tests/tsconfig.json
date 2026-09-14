@@ -1,0 +1,10 @@
+{
+  // Сквозные тесты протокола: настоящий сервер (Node) + клиентский PeerManager (DOM-типы).
+  // Смешение сред живёт только здесь, tsconfig сервера и клиента остаются чистыми.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"]
+  },
+  "include": ["test", "vitest.config.ts"]
+}

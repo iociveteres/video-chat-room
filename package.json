@@ -12,7 +12,7 @@
   },
   "scripts": {
     "dev": "concurrently --names server,client --prefix-colors blue,green --kill-others \"npm -w @vcr/server run dev\" \"npm -w @vcr/client run dev\"",
-    "typecheck": "tsc -b . packages/shared packages/server packages/client e2e",
+    "typecheck": "tsc -b . packages/shared packages/server packages/client packages/protocol-tests e2e",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
