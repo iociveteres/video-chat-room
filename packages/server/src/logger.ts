@@ -11,6 +11,8 @@ export interface LogFields {
   messageId?: string;
   /** Длина сообщения в code points — вместо самого текста. */
   length?: number;
+  /** Тип сигнала WebRTC (offer / answer / candidate) — вместо SDP и кандидатов. */
+  signalType?: string;
   socketId?: string;
   reason?: string;
   path?: string;

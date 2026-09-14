@@ -7,6 +7,7 @@ import type {
   MediaState,
   ParticipantDTO,
   ServerToClientEvents,
+  SignalData,
 } from '@vcr/shared';
 import { io, type Socket } from 'socket.io-client';
 
@@ -99,6 +100,36 @@ export function updateMedia(client: TestClient, media: MediaState): void {
 /** media:update с произвольными аргументами — для заведомо невалидных payload. */
 export function rawUpdateMedia(client: TestClient, ...args: unknown[]): void {
   (client as unknown as RawEmitter).emit('media:update', ...args);
+}
+
+export function sendSignal(client: TestClient, to: string, data: SignalData): void {
+  client.emit('signal', { to, data });
+}
+
+/** signal с произвольными аргументами — для заведомо невалидных payload. */
+export function rawSendSignal(client: TestClient, ...args: unknown[]): void {
+  (client as unknown as RawEmitter).emit('signal', ...args);
+}
+
+export interface RecordedSignal {
+  from: string;
+  data: SignalData;
+}
+
+/** Записывает signal клиента в порядке получения. */
+export function recordSignals(client: TestClient): RecordedSignal[] {
+  const signals: RecordedSignal[] = [];
+  client.on('signal', (msg) => signals.push(msg));
+  return signals;
+}
+
+/**
+ * Дожидается, пока сервер обработает все ранее отправленные события клиента и доставит
+ * ему всё, что уже поставлено в его сокет: ack на заведомо невалидный room:join идёт
+ * по тому же сокету после них и ничего не меняет на сервере.
+ */
+export async function flush(client: TestClient): Promise<void> {
+  await rawJoin(client, null);
 }
 
 export interface RecordedMedia {
