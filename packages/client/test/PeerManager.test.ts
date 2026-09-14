@@ -61,7 +61,12 @@ const CANDIDATE: SignalData = {
   candidate: { candidate: 'candidate:1', sdpMid: '0', sdpMLineIndex: 0 },
 };
 
-function setup(opts: { createSession?: (deps: PeerSessionDeps) => PeerSession } = {}) {
+function setup(
+  opts: {
+    createSession?: (deps: PeerSessionDeps) => PeerSession;
+    onSession?: (session: FakePeerSession) => void;
+  } = {},
+) {
   const media = new FakeMedia();
   const sessions = new Map<string, FakePeerSession>();
   const created: FakePeerSession[] = [];
@@ -82,6 +87,7 @@ function setup(opts: { createSession?: (deps: PeerSessionDeps) => PeerSession } 
         const session = new FakePeerSession(deps);
         sessions.set(deps.remoteId, session);
         created.push(session);
+        opts.onSession?.(session);
         return session as unknown as PeerSession;
       }),
   });
@@ -246,6 +252,109 @@ describe('PeerManager media tracks', () => {
     y.pendingReplace[0]!.resolve();
     await flushMicrotasks();
     expect(done).toBe(true);
+  });
+});
+
+describe('PeerManager fault isolation (N = 3)', () => {
+  function setupThree(onSession?: (session: FakePeerSession) => void) {
+    const t = setup({ onSession });
+    t.manager.handleParticipantJoined('a');
+    t.manager.handleParticipantJoined('b');
+    t.manager.handleSignal('c', OFFER);
+    const [a, b, c] = ['a', 'b', 'c'].map((id) => t.sessions.get(id)!);
+    return { ...t, a: a!, b: b!, c: c! };
+  }
+
+  it('one replaceTrack rejects → the others still get it and the subscriber resolves', async () => {
+    const t = setupThree();
+    const error = new Error('replaceTrack broke');
+    t.b.replaceTrack.mockImplementationOnce(() => Promise.reject(error));
+    const camera = new FakeTrack('video') as unknown as MediaStreamTrack;
+    let done = false;
+
+    void t.media.emit('video', camera).then(() => {
+      done = true;
+    });
+    await flushMicrotasks();
+
+    for (const s of [t.a, t.b, t.c]) expect(s.replaceTrack).toHaveBeenCalledWith('video', camera);
+    t.a.pendingReplace[0]!.resolve();
+    t.c.pendingReplace[0]!.resolve();
+    await flushMicrotasks();
+
+    expect(done).toBe(true);
+    expect(warn).toHaveBeenCalledWith('PeerManager: replaceTrack failed', 'b', error);
+    expect(t.statuses).toEqual([]);
+  });
+
+  it('handleSignal throws for one pair → failed only for it, others keep routing', () => {
+    const t = setupThree();
+    t.b.handleSignal.mockImplementationOnce(() => {
+      throw new Error('bad signal');
+    });
+
+    t.manager.handleSignal('b', ANSWER);
+    t.manager.handleSignal('a', ANSWER);
+    t.manager.handleSignal('c', CANDIDATE);
+
+    expect(t.statuses).toEqual([['b', 'failed']]);
+    expect(t.a.handleSignal).toHaveBeenCalledWith(ANSWER);
+    expect(t.c.handleSignal.mock.calls).toEqual([[OFFER], [CANDIDATE]]);
+    expect(t.manager.getSummary()).toEqual([
+      { participantId: 'a', role: 'offerer', status: 'connecting' },
+      { participantId: 'b', role: 'offerer', status: 'failed' },
+      { participantId: 'c', role: 'answerer', status: 'connecting' },
+    ]);
+    // Сессия не закрыта: пара может подняться позже.
+    expect(t.b.close).not.toHaveBeenCalled();
+    t.b.deps.onStatus('connected');
+    expect(t.manager.getSummary()[1]!.status).toBe('connected');
+  });
+
+  it('a throwing offer for a new answerer marks only that pair failed', () => {
+    const t = setupThree((session) => {
+      if (session.remoteId !== 'd') return;
+      session.handleSignal.mockImplementationOnce(() => {
+        throw new Error('bad offer');
+      });
+    });
+
+    t.manager.handleSignal('d', OFFER);
+
+    expect(t.statuses).toEqual([['d', 'failed']]);
+    expect(t.manager.ids()).toEqual(['a', 'b', 'c', 'd']);
+    expect(t.manager.getSummary().map((p) => p.status)).toEqual([
+      'connecting',
+      'connecting',
+      'connecting',
+      'failed',
+    ]);
+  });
+});
+
+describe('PeerManager getSummary', () => {
+  it('tracks role and last status per live pair', () => {
+    const t = setup();
+    expect(t.manager.getSummary()).toEqual([]);
+    t.manager.handleParticipantJoined('x');
+    t.manager.handleSignal('y', OFFER);
+
+    t.sessions.get('x')!.deps.onStatus('connected');
+    t.sessions.get('y')!.deps.onStatus('unstable');
+    expect(t.manager.getSummary()).toEqual([
+      { participantId: 'x', role: 'offerer', status: 'connected' },
+      { participantId: 'y', role: 'answerer', status: 'unstable' },
+    ]);
+
+    t.manager.handleParticipantLeft('x');
+    t.manager.handleParticipantJoined('x');
+    expect(t.manager.getSummary()).toEqual([
+      { participantId: 'y', role: 'answerer', status: 'unstable' },
+      { participantId: 'x', role: 'offerer', status: 'connecting' },
+    ]);
+
+    t.manager.closeAll();
+    expect(t.manager.getSummary()).toEqual([]);
   });
 });
 
