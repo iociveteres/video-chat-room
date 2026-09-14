@@ -47,7 +47,12 @@ export class RoomRegistry {
       return { ok: false, reason: 'ROOM_FULL' };
     }
 
-    const room = existing ?? { id: roomId, createdAt: this.now(), participants: new Map() };
+    const room = existing ?? {
+      id: roomId,
+      createdAt: this.now(),
+      participants: new Map(),
+      messages: [],
+    };
     if (!existing) this.rooms.set(roomId, room);
 
     const participant: Participant = { ...input, joinedAt: this.now() };

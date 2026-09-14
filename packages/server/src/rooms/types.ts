@@ -1,3 +1,6 @@
+import type { ChatMessage } from '@vcr/shared';
+import type { TokenBucket } from '../chat/TokenBucket';
+
 export interface Participant {
   /** UUID. */
   id: string;
@@ -5,6 +8,8 @@ export interface Participant {
   socketId: string;
   name: string;
   joinedAt: number;
+  /** Антифлуд чата; создаётся при входе, у каждого участника свой. */
+  chatBucket: TokenBucket;
 }
 
 export interface Room {
@@ -12,4 +17,6 @@ export interface Room {
   createdAt: number;
   /** Порядок вставки = порядок входа. */
   participants: Map<string, Participant>;
+  /** История чата, ≤ CHAT_HISTORY_LIMIT; порядок = порядок добавления на сервере. */
+  messages: ChatMessage[];
 }

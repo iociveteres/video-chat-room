@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CONTENT_SECURITY_POLICY } from '../../src/app';
+import { TokenBucket } from '../../src/chat/TokenBucket';
 import { startTestServer, type TestServer } from '../helpers/startTestServer';
 
 const INDEX_HTML = '<!doctype html><title>vcr-test-index</title>';
@@ -25,7 +26,8 @@ describe('HTTP without client dist (dev mode)', () => {
   });
 
   it('reports rooms from the registry', async () => {
-    t.server.registry.join('r1', { id: 'p1', socketId: 's1', name: 'A' });
+    const chatBucket = new TokenBucket({ capacity: 1, refillPerSecond: 1 });
+    t.server.registry.join('r1', { id: 'p1', socketId: 's1', name: 'A', chatBucket });
     try {
       const body = (await (await fetch(`${t.url}/healthz`)).json()) as { rooms: number };
       expect(body.rooms).toBe(1);

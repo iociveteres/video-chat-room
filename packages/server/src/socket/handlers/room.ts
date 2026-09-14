@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { isValidRoomId, validateName, type Ack, type JoinAck } from '@vcr/shared';
+import { CHAT_RATE_LIMIT, isValidRoomId, validateName, type Ack, type JoinAck } from '@vcr/shared';
+import { TokenBucket } from '../../chat/TokenBucket';
 import { toParticipantDTO } from '../../rooms/RoomRegistry';
 import { ackError } from '../ack';
 import { adapterRoom } from '../adapterRoom';
@@ -30,6 +31,10 @@ export function registerRoomHandlers(ctx: HandlerContext, socket: AppSocket): vo
         id: randomUUID(),
         socketId: socket.id,
         name: name.value,
+        chatBucket: new TokenBucket({
+          capacity: CHAT_RATE_LIMIT.burst,
+          refillPerSecond: CHAT_RATE_LIMIT.refillPerSecond,
+        }),
       });
       if (!result.ok) return ack(ackError('ROOM_FULL'));
       socket.data.roomId = roomId;
