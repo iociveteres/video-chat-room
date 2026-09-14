@@ -9,6 +9,9 @@ export interface MeshParticipant extends Participant {
   name: string;
 }
 
+/** Подготовка вкладки до входа в комнату, например addInitScript. */
+export type BeforeJoin = (participant: Participant) => Promise<void>;
+
 export interface MeshRoom {
   url: string;
   participants: MeshParticipant[];
@@ -19,12 +22,14 @@ export async function openMeshRoom(
   browser: Browser,
   count: number,
   names: readonly string[] = MESH_NAMES,
+  beforeJoin?: BeforeJoin,
 ): Promise<MeshRoom> {
   const first = await newParticipant(browser);
+  await beforeJoin?.(first);
   const url = await createRoom(first.page, names[0]!);
   const participants: MeshParticipant[] = [{ ...first, name: names[0]! }];
   for (const name of names.slice(1, count)) {
-    participants.push(await joinMeshRoom(browser, url, name));
+    participants.push(await joinMeshRoom(browser, url, name, beforeJoin));
   }
   return { url, participants };
 }
@@ -34,8 +39,10 @@ export async function joinMeshRoom(
   browser: Browser,
   url: string,
   name: string,
+  beforeJoin?: BeforeJoin,
 ): Promise<MeshParticipant> {
   const participant = await newParticipant(browser);
+  await beforeJoin?.(participant);
   await joinByLink(participant.page, url, name);
   return { ...participant, name };
 }
@@ -128,4 +135,52 @@ export function localVideoSettings(participant: Participant) {
 interface LocalTracks {
   audio: MediaStreamTrack | null;
   video: MediaStreamTrack | null;
+}
+
+/**
+ * Запоминает каждый RTCPeerConnection вкладки в window.__e2ePeerConnections: параметры
+ * отправителей (maxBitrate) снаружи иначе не прочитать. Вызывать до входа в комнату.
+ */
+export async function trackPeerConnections(participant: Participant): Promise<void> {
+  await participant.page.addInitScript(() => {
+    const Native = window.RTCPeerConnection;
+    const created: RTCPeerConnection[] = [];
+    (window as unknown as { __e2ePeerConnections: RTCPeerConnection[] }).__e2ePeerConnections =
+      created;
+    window.RTCPeerConnection = class extends Native {
+      constructor(config?: RTCConfiguration) {
+        super(config);
+        created.push(this);
+      }
+    };
+  });
+}
+
+/** encodings видео-отправителя каждого открытого RTCPeerConnection (нужен trackPeerConnections). */
+export function videoSenderEncodings(participant: Participant) {
+  return participant.page.evaluate(() =>
+    (window as unknown as { __e2ePeerConnections: RTCPeerConnection[] }).__e2ePeerConnections
+      .filter((pc) => pc.signalingState !== 'closed')
+      .map((pc) => {
+        const video = pc.getTransceivers().find((tx) => tx.receiver.track.kind === 'video');
+        return (video?.sender.getParameters().encodings ?? []).map(({ maxBitrate }) => ({
+          maxBitrate,
+        }));
+      }),
+  );
+}
+
+/** Отправлено байт видео в пару и метка времени замера (outbound-rtp из getStats). */
+export async function outboundVideoBytes(
+  participant: Participant,
+  ids: Record<string, string>,
+  peerName: string,
+): Promise<{ bytesSent: number; timestamp: number }> {
+  const outbound = (await pairStats(participant, ids, peerName)).find(
+    (s) => s.type === 'outbound-rtp' && s.kind === 'video',
+  );
+  return {
+    bytesSent: Number(outbound?.bytesSent ?? 0),
+    timestamp: Number(outbound?.timestamp ?? 0),
+  };
 }

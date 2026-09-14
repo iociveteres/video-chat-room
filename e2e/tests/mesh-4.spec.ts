@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, firefox, test, type Page } from '@playwright/test';
 import {
   callConfig,
   expectGrowing,
@@ -12,9 +12,12 @@ import {
   localVideoSettings,
   MESH_NAMES,
   openMeshRoom,
+  outboundVideoBytes,
   participantIds,
   peerSummary,
   signalCountsByName,
+  trackPeerConnections,
+  videoSenderEncodings,
   waitForFullMesh,
   type MeshParticipant,
 } from './helpers/mesh';
@@ -314,5 +317,70 @@ test('grid layout for 1–4 participants at 1024 and 1440 px', async ({ browser 
       );
     }
     if (name) participants.push(await joinMeshRoom(browser, url, name));
+  }
+});
+
+// Битрейт и кросс-браузерность (TDD этапа 5 §11.4, сценарии 9–10).
+
+test('bitrate cap: every video sender has maxBitrate 1 Mbps and sends ≤ 1.1 Mbps on average', async ({
+  browser,
+}) => {
+  const { participants } = await openMeshRoom(browser, 4, MESH_NAMES, trackPeerConnections);
+  await waitForFullMesh(participants);
+  const ids = await participantIds(participants);
+
+  const directions = participants.flatMap((me) =>
+    participants.filter((peer) => peer !== me).map((peer) => [me, peer] as const),
+  );
+  const before = await Promise.all(
+    directions.map(([me, peer]) => outboundVideoBytes(me, ids, peer.name)),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 10_000));
+  const after = await Promise.all(
+    directions.map(([me, peer]) => outboundVideoBytes(me, ids, peer.name)),
+  );
+
+  for (const me of participants) {
+    // По одному отправителю на каждую из 3 пар, у каждого — потолок 1000 kbps (MAX_VIDEO_BITRATE_BPS).
+    expect(await videoSenderEncodings(me), `encodings of ${me.name}`).toEqual(
+      Array.from({ length: 3 }, () => [{ maxBitrate: 1_000_000 }]),
+    );
+  }
+  directions.forEach(([me, peer], i) => {
+    const seconds = (after[i]!.timestamp - before[i]!.timestamp) / 1000;
+    const bps = ((after[i]!.bytesSent - before[i]!.bytesSent) * 8) / seconds;
+    expect(seconds, `${me.name} → ${peer.name} window`).toBeGreaterThan(9);
+    expect(bps, `${me.name} → ${peer.name} average bitrate`).toBeGreaterThan(0);
+    expect(bps, `${me.name} → ${peer.name} average bitrate`).toBeLessThanOrEqual(1_100_000);
+  });
+});
+
+test('mixed room: 2 × Chromium + 1 × Firefox connect all pairs', async ({ browser }) => {
+  // Should: второй движок — только с PW_FIREFOX=1 (нужен `npx playwright install firefox`).
+  test.skip(process.env.PW_FIREFOX !== '1', 'set PW_FIREFOX=1 to run the Firefox scenarios');
+
+  const { url, participants: chromium } = await openMeshRoom(browser, 2);
+  const firefoxBrowser = await firefox.launch({
+    firefoxUserPrefs: {
+      'media.navigator.streams.fake': true,
+      'media.navigator.permission.disabled': true,
+      // Как --disable-features=WebRtcHideLocalIpsWithMdns у Chromium: host-кандидаты без *.local.
+      // На Windows Chromium резолвит *.local и без этого, но в контейнерах CI mDNS обычно нет.
+      'media.peerconnection.ice.obfuscate_host_addresses': false,
+    },
+  });
+  try {
+    const fx = await joinMeshRoom(firefoxBrowser, url, VERA);
+    const participants = [...chromium, fx];
+    await waitForFullMesh(participants);
+    for (const me of participants) {
+      await expectRemoteTilesPlaying(
+        me,
+        participants.filter((p) => p !== me),
+      );
+    }
+  } finally {
+    await closeParticipants();
+    await firefoxBrowser.close();
   }
 });
