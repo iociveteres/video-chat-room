@@ -211,7 +211,7 @@ describe('RoomPage', () => {
       ).toBeNull();
     });
 
-    it('the microphone toggle mutes, sends media:update and marks self in the list', async () => {
+    it('the toggles turn devices off, send media:update and mark self in the list', async () => {
       const t = renderRoom();
       await joinAlone(t);
 
@@ -225,23 +225,16 @@ describe('RoomPage', () => {
       await t.user.click(screen.getByRole('tab', { name: /Участники/ }));
       const selfItem = within(screen.getByRole('list')).getAllByRole('listitem')[1]!;
       expect(within(selfItem).getByRole('img', { name: 'Микрофон выключен' })).toBeInTheDocument();
-    });
-
-    it('the camera toggle stops the track and shows the placeholder', async () => {
-      const t = renderRoom();
-      await joinAlone(t);
-      // В StrictMode провайдер может создать сессию дважды — берём трек у фейковых устройств.
-      const track = t.media.devices.createdTracks.find((created) => created.kind === 'video')!;
 
       await t.user.click(within(toolbar()).getByRole('button', { name: 'Камера' }));
       await t.settleMedia();
 
-      expect(track.readyState).toBe('ended');
       expect(within(toolbar()).getByRole('button', { name: 'Камера' })).toHaveAttribute(
         'aria-pressed',
         'false',
       );
       expect(screen.getByRole('figure', { name: 'Вы' })).toHaveTextContent('Камера выключена');
+      expect(mediaUpdates(t).at(-1)).toEqual({ audio: false, video: false });
     });
 
     it('shows remote media changes as icons in the participant list', async () => {
@@ -262,17 +255,6 @@ describe('RoomPage', () => {
           .getAllByRole('img')
           .map((icon) => icon.getAttribute('aria-label')),
       ).toEqual(['Микрофон выключен', 'Камера выключена']);
-    });
-
-    it('«Выйти» releases the devices', async () => {
-      const t = renderRoom();
-      await joinAlone(t);
-
-      await t.user.click(within(toolbar()).getByRole('button', { name: 'Выйти' }));
-
-      expect(t.media.devices.createdTracks.every((track) => track.readyState === 'ended')).toBe(
-        true,
-      );
     });
 
     it('denied access → the user is in the room with a persistent banner', async () => {

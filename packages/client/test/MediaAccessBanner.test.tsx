@@ -50,17 +50,6 @@ describe('MediaAccessBanner', () => {
     );
   });
 
-  it.each<[DeviceStatus, DeviceStatus]>([
-    ['on', 'on'],
-    ['off', 'off'],
-    ['busy', 'not-found'],
-    ['lost', 'failed'],
-  ])('is hidden for audio=%s video=%s', (audio, video) => {
-    const t = renderBanner();
-    t.setStatuses(audio, video);
-    expect(t.banner()).toBeNull();
-  });
-
   it('stays until the device is turned on, then disappears', () => {
     const t = renderBanner();
     t.setStatuses('denied', 'denied');

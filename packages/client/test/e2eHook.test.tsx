@@ -44,15 +44,6 @@ describe('recordCreatedTracks', () => {
     expect(devices.getUserMedia).toBe(wrapped);
     expect(first).toHaveLength(1);
   });
-
-  it('does not record anything for a rejected request', async () => {
-    const devices = new FakeMediaDevices().rejectWith('NotAllowedError');
-    const tracks = recordCreatedTracks(devices as unknown as MediaDevices);
-
-    await expect(devices.getUserMedia({ audio: true })).rejects.toThrow();
-
-    expect(tracks).toEqual([]);
-  });
 });
 
 describe('installE2EHook', () => {

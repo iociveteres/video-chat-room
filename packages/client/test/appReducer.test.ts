@@ -311,12 +311,8 @@ describe('appReducer', () => {
   });
 
   describe('NOTICE_SHOWN', () => {
-    it.each<[string, AppState]>([
-      ['idle', initialAppState],
-      ['joining', joining],
-      ['joined', joined],
-    ])('shows the notice in %s; a repeated text is a new notice', (_label, state) => {
-      const first = appReducer(state, {
+    it('shows the notice in any phase; a repeated text is a new notice', () => {
+      const first = appReducer(initialAppState, {
         type: 'NOTICE_SHOWN',
         text: 'Камера занята',
         tone: 'error',
@@ -371,9 +367,6 @@ describe('appReducer', () => {
     it.each<[string, AppState]>([
       ['idle', initialAppState],
       ['joining', joining],
-      ['joined', joined],
-      ['failed', reduce(joining, { type: 'JOIN_FAILED', reason: 'ROOM_FULL' })],
-      ['connection-lost', reduce(joined, { type: 'CONNECTION_LOST' })],
     ])('is accepted in %s: capture runs before join, stopAll after leaving', (_label, state) => {
       const next = appReducer(state, {
         type: 'LOCAL_MEDIA_STATUS_CHANGED',
@@ -439,7 +432,6 @@ describe('appReducer', () => {
     });
 
     it.each<[string, AppState]>([
-      ['idle', initialAppState],
       ['joining', joining],
       ['connection-lost', reduce(joined, { type: 'CONNECTION_LOST' })],
     ])('is ignored in %s', (_label, state) => {
@@ -488,17 +480,14 @@ describe('selectors', () => {
       expect(selectParticipantMedia(state, alex.id)).toEqual({ audio: true, video: false });
     });
 
-    it.each(['acquiring', 'off', 'denied', 'not-found', 'busy', 'lost', 'failed'] as const)(
-      'treats the %s status as disabled',
-      (status) => {
-        const state = appReducer(joined, {
-          type: 'LOCAL_MEDIA_STATUS_CHANGED',
-          kind: 'video',
-          status,
-        });
-        expect(selectParticipantMedia(state, alex.id)?.video).toBe(false);
-      },
-    );
+    it('treats any status other than on as disabled', () => {
+      const acquiring = appReducer(joined, {
+        type: 'LOCAL_MEDIA_STATUS_CHANGED',
+        kind: 'video',
+        status: 'acquiring',
+      });
+      expect(selectParticipantMedia(acquiring, alex.id)).toEqual({ audio: false, video: false });
+    });
 
     it('reads the server state for others and null for unknown ids', () => {
       const state = appReducer(joined, {

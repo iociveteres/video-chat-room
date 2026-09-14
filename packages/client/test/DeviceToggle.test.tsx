@@ -11,74 +11,56 @@ function renderToggle(kind: TrackKind, status: DeviceStatus, onToggle = vi.fn())
   return { button, icon, onToggle };
 }
 
+// Тексты всех статусов проверяются в mediaTexts.test.ts; здесь — что кнопка их использует.
 describe('DeviceToggle', () => {
-  it.each<[DeviceStatus, boolean]>([
-    ['on', true],
-    ['off', false],
-    ['acquiring', false],
-    ['denied', false],
-    ['not-found', false],
-    ['busy', false],
-    ['lost', false],
-    ['failed', false],
-  ])('status %s → aria-pressed=%s', (status, pressed) => {
-    const { button } = renderToggle('video', status);
-    expect(button).toHaveAttribute('aria-pressed', String(pressed));
+  it('on: pressed, «on» icon, clickable', async () => {
+    const t = renderToggle('audio', 'on');
+
+    expect(t.button).toHaveAttribute('aria-pressed', 'true');
+    expect(t.button).toHaveAttribute('title', 'Микрофон включён');
+    expect(t.icon).toHaveAttribute('data-icon', 'on');
+    await userEvent.click(t.button);
+    expect(t.onToggle).toHaveBeenCalledTimes(1);
   });
 
-  it.each<[TrackKind, DeviceStatus, string]>([
-    ['audio', 'on', 'Микрофон включён'],
-    ['audio', 'off', 'Микрофон выключен'],
-    ['audio', 'acquiring', 'Включаем микрофон…'],
-    ['audio', 'denied', 'Нет доступа к микрофону'],
-    ['audio', 'not-found', 'Микрофон не найден'],
-    ['audio', 'busy', 'Микрофон занят другим приложением'],
-    ['audio', 'lost', 'Микрофон отключён'],
-    ['audio', 'failed', 'Не удалось включить микрофон'],
-    ['video', 'on', 'Камера включена'],
-    ['video', 'off', 'Камера выключена'],
-    ['video', 'acquiring', 'Включаем камеру…'],
-    ['video', 'denied', 'Нет доступа к камере'],
-    ['video', 'not-found', 'Камера не найдена'],
-    ['video', 'busy', 'Камера занята другим приложением'],
-    ['video', 'lost', 'Камера отключена'],
-    ['video', 'failed', 'Не удалось включить камеру'],
-  ])('%s %s → title «%s»', (kind, status, title) => {
-    const { button } = renderToggle(kind, status);
-    expect(button).toHaveAttribute('title', title);
+  it('off: not pressed, «off» icon without a warning, clickable', async () => {
+    const t = renderToggle('video', 'off');
+
+    expect(t.button).toHaveAttribute('aria-pressed', 'false');
+    expect(t.button).toHaveAttribute('title', 'Камера выключена');
+    expect(t.icon).toHaveAttribute('data-icon', 'off');
+    expect(t.icon.querySelector('.device-toggle__warning')).toBeNull();
+    await userEvent.click(t.button);
+    expect(t.onToggle).toHaveBeenCalledTimes(1);
   });
 
-  it('is disabled only while acquiring', async () => {
-    const { button, onToggle } = renderToggle('video', 'acquiring');
+  it('acquiring: not pressed and disabled', async () => {
+    const t = renderToggle('video', 'acquiring');
 
-    expect(button).toBeDisabled();
-    await userEvent.click(button);
-    expect(onToggle).not.toHaveBeenCalled();
+    expect(t.button).toHaveAttribute('aria-pressed', 'false');
+    expect(t.button).toHaveAttribute('title', 'Включаем камеру…');
+    expect(t.button).toBeDisabled();
+    await userEvent.click(t.button);
+    expect(t.onToggle).not.toHaveBeenCalled();
   });
 
-  it.each<DeviceStatus>(['on', 'off', 'denied', 'not-found', 'busy', 'lost', 'failed'])(
-    'is clickable in %s (an error status retries the device)',
+  it.each<DeviceStatus>(['denied', 'not-found', 'busy', 'lost', 'failed'])(
+    '%s: not pressed, warning icon, clickable to retry',
     async (status) => {
-      const { button, onToggle } = renderToggle('audio', status);
+      const t = renderToggle('video', status);
 
-      expect(button).toBeEnabled();
-      await userEvent.click(button);
-      expect(onToggle).toHaveBeenCalledTimes(1);
+      expect(t.button).toHaveAttribute('aria-pressed', 'false');
+      expect(t.icon).toHaveAttribute('data-icon', 'warning');
+      expect(t.icon.querySelector('.device-toggle__warning')).not.toBeNull();
+      await userEvent.click(t.button);
+      expect(t.onToggle).toHaveBeenCalledTimes(1);
     },
   );
 
-  it.each<[DeviceStatus, string]>([
-    ['on', 'on'],
-    ['off', 'off'],
-    ['acquiring', 'off'],
-    ['denied', 'warning'],
-    ['not-found', 'warning'],
-    ['busy', 'warning'],
-    ['lost', 'warning'],
-    ['failed', 'warning'],
-  ])('status %s → %s icon', (status, icon) => {
-    const t = renderToggle('audio', status);
-    expect(t.icon).toHaveAttribute('data-icon', icon);
-    expect(t.icon.querySelector('.device-toggle__warning') !== null).toBe(icon === 'warning');
+  it('uses the reason as the title', () => {
+    expect(renderToggle('video', 'busy').button).toHaveAttribute(
+      'title',
+      'Камера занята другим приложением',
+    );
   });
 });

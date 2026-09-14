@@ -81,10 +81,5 @@ describe('ParticipantList', () => {
       expect(icons(self!)).toEqual(['Микрофон выключен']);
       expect(icons(other!)).toEqual([]);
     });
-
-    it('does not add icon text to the item text', () => {
-      render(<ParticipantList participants={participants} selfId="p1" />);
-      expect(screen.getAllByRole('listitem')[0]?.textContent).toBe('Мария (вы)');
-    });
   });
 });

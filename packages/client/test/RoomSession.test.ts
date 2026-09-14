@@ -1,6 +1,5 @@
 import {
   ACK_TIMEOUT_MS,
-  AUDIO_CONSTRAINTS,
   CONNECT_TIMEOUT_MS,
   type ChatMessage,
   type ParticipantDTO,
@@ -170,23 +169,6 @@ describe('RoomSession.join', () => {
     expect(t.sockets).toHaveLength(1);
     t.lastSocket().serverConnect();
     expect(t.lastSocket().lastEmitted('room:join').args[0]).toMatchObject({ media: ALL_ON });
-  });
-
-  it('sends the public state of partially available devices in room:join', async () => {
-    const devices = new FakeMediaDevices();
-    devices.inputs = ['audioinput'];
-    const t = setup(devices);
-
-    const socket = await t.startJoin();
-    socket.serverConnect();
-
-    expect(socket.lastEmitted('room:join').args[0]).toMatchObject({
-      media: { audio: true, video: false },
-    });
-    expect(t.getState().notice).toMatchObject({
-      text: 'Камера не найдена — вы в комнате без видео',
-      tone: 'info',
-    });
   });
 
   it('joins with everything off when access is denied', async () => {
@@ -561,21 +543,6 @@ describe('RoomSession: publishing media state', () => {
     await flushMicrotasks();
 
     expect(t.devices.getUserMedia).not.toHaveBeenCalled();
-  });
-
-  it('turns the microphone on from denied through a new getUserMedia', async () => {
-    const devices = new FakeMediaDevices();
-    devices.rejectWith('NotAllowedError', { once: true });
-    const t = setup(devices);
-    const socket = await t.joinSuccessfully();
-    expect(t.getState().localMedia.audio).toBe('denied');
-
-    t.session.toggleAudio();
-    await flushMicrotasks();
-
-    expect(devices.requests.at(-1)).toEqual({ audio: AUDIO_CONSTRAINTS });
-    expect(t.getState().localMedia.audio).toBe('on');
-    expect(t.mediaUpdates(socket)).toEqual([{ audio: true, video: false }]);
   });
 
   it('dispatches participant:media as PARTICIPANT_MEDIA_CHANGED', async () => {

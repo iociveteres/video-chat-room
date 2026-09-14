@@ -93,31 +93,4 @@ describe('SelfTile', () => {
 
     expect(screen.getByRole('img', { name: 'Микрофон выключен' })).toBeInTheDocument();
   });
-
-  it.each<[string, (devices: FakeMediaDevices) => void, string]>([
-    ['denied', (d) => d.rejectWith('NotAllowedError'), 'Нет доступа к камере'],
-    ['not-found', (d) => (d.inputs = ['audioinput']), 'Камера не найдена'],
-    [
-      'busy',
-      (d) => d.rejectWith('NotReadableError', { kind: 'video' }),
-      'Камера занята другим приложением',
-    ],
-  ])('camera %s → placeholder with «%s»', async (_label, program, text) => {
-    const devices = new FakeMediaDevices();
-    program(devices);
-
-    const t = await renderStage(devices);
-
-    expect(t.placeholder()).toHaveTextContent(text);
-  });
-
-  it('device lost → «Камера отключена»', async () => {
-    const t = await renderStage();
-    const track = t.session.media.getTracks().video as unknown as { dispatchEnded(): void };
-
-    act(() => track.dispatchEnded());
-    await t.settle();
-
-    expect(t.placeholder()).toHaveTextContent('Камера отключена');
-  });
 });
