@@ -1,5 +1,6 @@
 import { vi } from 'vitest';
-import type { TrackKind } from '../../src/media/MediaController';
+import { MediaController, type TrackKind } from '../../src/media/MediaController';
+import type { MediaCallbacks } from '../../src/session/RoomSession';
 
 let trackSeq = 0;
 
@@ -157,4 +158,35 @@ export class FakePermissions {
     }
     return Promise.resolve({ state: this.states[name] ?? 'prompt' } as PermissionStatus);
   });
+}
+
+/**
+ * Фабрика MediaController для RoomSession на фейковых устройствах (в jsdom нет MediaStream
+ * и navigator.mediaDevices). По умолчанию обе устройства есть и доступ выдаётся.
+ */
+export function fakeMedia(devices = new FakeMediaDevices(), permissions?: FakePermissions) {
+  let controller: MediaController | undefined;
+  const createMedia = (callbacks: MediaCallbacks) =>
+    (controller = new MediaController({
+      mediaDevices: devices as unknown as MediaDevices,
+      permissions,
+      createStream: () => new FakeMediaStream() as unknown as MediaStream,
+      ...callbacks,
+    }));
+  return {
+    devices,
+    createMedia,
+    get controller(): MediaController {
+      if (!controller) throw new Error('MediaController was not created');
+      return controller;
+    },
+  };
+}
+
+/**
+ * Досчитывает цепочки промисов фейковых устройств. Не зависит от таймеров, поэтому работает и
+ * с vi.useFakeTimers(): vi.waitFor при фейковых таймерах сдвигал бы время.
+ */
+export async function flushMicrotasks(rounds = 50): Promise<void> {
+  for (let i = 0; i < rounds; i++) await Promise.resolve();
 }

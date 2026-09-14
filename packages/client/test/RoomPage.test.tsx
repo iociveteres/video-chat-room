@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RoomSession } from '../src/session/RoomSession';
 import { AppStateProvider } from '../src/state/AppStateProvider';
 import { RoomPage } from '../src/features/room/RoomPage';
+import { fakeMedia, flushMicrotasks } from './helpers/FakeMedia';
 import { FakeSocket } from './helpers/FakeSocket';
 
 const ROOM = 'q7Z3kP0aX_2m';
@@ -30,6 +31,7 @@ const boris: ParticipantDTO = {
 
 function renderRoom() {
   const sockets: FakeSocket[] = [];
+  const media = fakeMedia();
   const createSession = (dispatch: ConstructorParameters<typeof RoomSession>[0]['dispatch']) =>
     new RoomSession({
       dispatch,
@@ -38,6 +40,7 @@ function renderRoom() {
         sockets.push(socket);
         return socket.asSocket();
       },
+      createMedia: media.createMedia,
     });
 
   render(
@@ -54,14 +57,18 @@ function renderRoom() {
     return socket;
   };
 
+  /** Досчитывает захват медиа на фейковых устройствах (в act — это меняет state). */
+  const settleMedia = () => act(() => flushMicrotasks());
+
   /** Сервер принимает подключение и отвечает на room:join (в act — это меняет state). */
   const serverAcceptsJoin = (response: unknown) =>
-    act(() => {
+    act(async () => {
+      await flushMicrotasks();
       lastSocket().serverConnect();
       lastSocket().lastEmitted('room:join').respond(response);
     });
 
-  return { sockets, lastSocket, serverAcceptsJoin, user: userEvent.setup() };
+  return { sockets, media, lastSocket, settleMedia, serverAcceptsJoin, user: userEvent.setup() };
 }
 
 async function enterName(user: ReturnType<typeof userEvent.setup>, name = 'Алекс') {
@@ -93,12 +100,13 @@ describe('RoomPage', () => {
     await enterName(t.user);
 
     expect(screen.getByRole('status')).toHaveTextContent('Подключаемся к комнате…');
+    await t.settleMedia();
     expect(t.sockets).toHaveLength(1);
 
-    t.serverAcceptsJoin({ ok: true, self: alex, participants: [maria, alex], messages: [] });
+    await t.serverAcceptsJoin({ ok: true, self: alex, participants: [maria, alex], messages: [] });
 
     expect(t.lastSocket().lastEmitted('room:join').args).toEqual([
-      { roomId: ROOM, name: 'Алекс', media: { audio: false, video: false } },
+      { roomId: ROOM, name: 'Алекс', media: { audio: true, video: true } },
     ]);
     expect(screen.getByRole('heading', { name: `Комната ${ROOM}` })).toBeInTheDocument();
     await t.user.click(screen.getByRole('tab', { name: 'Участники (2/4)' }));
@@ -109,7 +117,7 @@ describe('RoomPage', () => {
   it('updates the list in real time', async () => {
     const t = renderRoom();
     await enterName(t.user);
-    t.serverAcceptsJoin({ ok: true, self: alex, participants: [maria, alex], messages: [] });
+    await t.serverAcceptsJoin({ ok: true, self: alex, participants: [maria, alex], messages: [] });
 
     act(() => t.lastSocket().serverEmit('participant:joined', { participant: boris }));
     act(() => t.lastSocket().serverEmit('participant:left', { participantId: maria.id }));
@@ -122,7 +130,7 @@ describe('RoomPage', () => {
   it('«Выйти» leaves the room and goes to the lobby', async () => {
     const t = renderRoom();
     await enterName(t.user);
-    t.serverAcceptsJoin({ ok: true, self: alex, participants: [alex], messages: [] });
+    await t.serverAcceptsJoin({ ok: true, self: alex, participants: [alex], messages: [] });
 
     await t.user.click(screen.getByRole('button', { name: 'Выйти' }));
 
@@ -134,19 +142,21 @@ describe('RoomPage', () => {
     const t = renderRoom();
     await enterName(t.user);
 
-    t.serverAcceptsJoin({ ok: false, error: { code: 'ROOM_FULL' } });
+    await t.serverAcceptsJoin({ ok: false, error: { code: 'ROOM_FULL' } });
     expect(screen.getByRole('heading', { name: 'Комната заполнена' })).toBeInTheDocument();
 
     await t.user.click(screen.getByRole('button', { name: 'Повторить вход' }));
+    await t.settleMedia();
     expect(t.sockets).toHaveLength(2);
 
-    t.serverAcceptsJoin({ ok: true, self: alex, participants: [alex], messages: [] });
+    await t.serverAcceptsJoin({ ok: true, self: alex, participants: [alex], messages: [] });
     expect(screen.getByRole('button', { name: 'Выйти' })).toBeInTheDocument();
   });
 
   it('SERVER_UNAVAILABLE → «Сервер недоступен»; «На главную» goes to the lobby', async () => {
     const t = renderRoom();
     await enterName(t.user);
+    await t.settleMedia();
 
     act(() => t.lastSocket().serverConnectError());
     expect(screen.getByRole('heading', { name: 'Сервер недоступен' })).toBeInTheDocument();
@@ -158,7 +168,7 @@ describe('RoomPage', () => {
   it('connection loss → «Соединение с сервером прервано»; «Войти снова» reconnects', async () => {
     const t = renderRoom();
     await enterName(t.user);
-    t.serverAcceptsJoin({ ok: true, self: alex, participants: [alex], messages: [] });
+    await t.serverAcceptsJoin({ ok: true, self: alex, participants: [alex], messages: [] });
 
     act(() => t.lastSocket().serverDisconnect('transport close'));
     expect(
@@ -166,6 +176,7 @@ describe('RoomPage', () => {
     ).toBeInTheDocument();
 
     await t.user.click(screen.getByRole('button', { name: 'Войти снова' }));
+    await t.settleMedia();
     expect(t.sockets).toHaveLength(2);
     expect(screen.getByRole('status')).toHaveTextContent('Подключаемся к комнате…');
   });
@@ -184,7 +195,12 @@ describe('RoomPage', () => {
       const t = renderRoom();
       await enterName(t.user);
 
-      t.serverAcceptsJoin({ ok: true, self: alex, participants: [alex], messages: [joinedAlex] });
+      await t.serverAcceptsJoin({
+        ok: true,
+        self: alex,
+        participants: [alex],
+        messages: [joinedAlex],
+      });
 
       const sidebar = screen.getByRole('complementary');
       expect(within(sidebar).getByRole('tab', { name: 'Чат' })).toHaveAttribute(
@@ -199,7 +215,7 @@ describe('RoomPage', () => {
     it('sends a message with Enter and shows it after the broadcast', async () => {
       const t = renderRoom();
       await enterName(t.user);
-      t.serverAcceptsJoin({ ok: true, self: alex, participants: [alex], messages: [] });
+      await t.serverAcceptsJoin({ ok: true, self: alex, participants: [alex], messages: [] });
 
       await t.user.type(screen.getByRole('textbox', { name: 'Сообщение' }), 'Привет{Enter}');
 
@@ -228,7 +244,7 @@ describe('RoomPage', () => {
     it('returns the text to the field when the server rate-limits it', async () => {
       const t = renderRoom();
       await enterName(t.user);
-      t.serverAcceptsJoin({ ok: true, self: alex, participants: [alex], messages: [] });
+      await t.serverAcceptsJoin({ ok: true, self: alex, participants: [alex], messages: [] });
       const field = screen.getByRole('textbox', { name: 'Сообщение' });
 
       await t.user.type(field, 'флуд{Enter}');
@@ -247,7 +263,7 @@ describe('RoomPage', () => {
     const t = renderRoom();
     await enterName(t.user);
 
-    t.serverAcceptsJoin({ ok: false, error: { code: 'INVALID_NAME' } });
+    await t.serverAcceptsJoin({ ok: false, error: { code: 'INVALID_NAME' } });
 
     expect(screen.getByLabelText('Ваше имя')).toHaveValue('Алекс');
     expect(screen.getByText('Сервер не принял это имя. Попробуйте другое.')).toBeInTheDocument();

@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { ChatPanel } from '../src/features/chat/ChatPanel';
 import { RoomSession } from '../src/session/RoomSession';
 import { AppStateProvider } from '../src/state/AppStateProvider';
+import { fakeMedia, flushMicrotasks } from './helpers/FakeMedia';
 import { FakeSocket } from './helpers/FakeSocket';
 
 const alex: ParticipantDTO = {
@@ -37,7 +38,11 @@ function renderChat() {
   render(
     <AppStateProvider
       createSession={(dispatch) =>
-        (session = new RoomSession({ dispatch, createSocket: () => socket.asSocket() }))
+        (session = new RoomSession({
+          dispatch,
+          createSocket: () => socket.asSocket(),
+          createMedia: fakeMedia().createMedia,
+        }))
       }
     >
       <ChatPanel />
@@ -45,8 +50,9 @@ function renderChat() {
   );
 
   const joinWith = (messages: ChatMessage[]) =>
-    act(() => {
+    act(async () => {
       session!.join('room1', alex.name);
+      await flushMicrotasks();
       socket.serverConnect();
       socket
         .lastEmitted('room:join')
@@ -63,10 +69,10 @@ describe('ChatPanel', () => {
     expect(within(screen.getByRole('log')).queryAllByRole('listitem')).toEqual([]);
   });
 
-  it('shows the history from the join ack and new messages from the socket', () => {
+  it('shows the history from the join ack and new messages from the socket', async () => {
     const { socket, joinWith } = renderChat();
 
-    joinWith([joinedAlex]);
+    await joinWith([joinedAlex]);
     expect(within(screen.getByRole('log')).getAllByRole('listitem')).toHaveLength(1);
     expect(screen.getByText('Алекс').tagName).toBe('STRONG');
 
@@ -78,9 +84,9 @@ describe('ChatPanel', () => {
     expect(within(items[1]!).getByRole('link')).toHaveAttribute('href', 'https://example.com/doc');
   });
 
-  it('marks own messages using selfId from state', () => {
+  it('marks own messages using selfId from state', async () => {
     const { socket, joinWith } = renderChat();
-    joinWith([]);
+    await joinWith([]);
 
     act(() =>
       socket.serverEmit('chat:message', {

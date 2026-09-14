@@ -5,6 +5,7 @@ import { NOTICE_DISMISS_MS, NoticeToast } from '../src/features/notice/NoticeToa
 import { RoomSession } from '../src/session/RoomSession';
 import type { AppAction } from '../src/state/actions';
 import { AppStateProvider } from '../src/state/AppStateProvider';
+import { fakeMedia } from './helpers/FakeMedia';
 import { FakeSocket } from './helpers/FakeSocket';
 
 function renderToast() {
@@ -14,7 +15,11 @@ function renderToast() {
     <AppStateProvider
       createSession={(d) => {
         dispatch = d;
-        return new RoomSession({ dispatch: d, createSocket: () => socket.asSocket() });
+        return new RoomSession({
+          dispatch: d,
+          createSocket: () => socket.asSocket(),
+          createMedia: fakeMedia().createMedia,
+        });
       }}
     >
       <NoticeToast />

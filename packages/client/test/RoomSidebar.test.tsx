@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RoomSidebar } from '../src/features/room/RoomSidebar';
 import { RoomSession } from '../src/session/RoomSession';
 import { AppStateProvider } from '../src/state/AppStateProvider';
+import { fakeMedia, flushMicrotasks } from './helpers/FakeMedia';
 import { FakeSocket } from './helpers/FakeSocket';
 
 const alex: ParticipantDTO = {
@@ -29,20 +30,25 @@ const fromMaria = {
   text: 'Привет',
 } satisfies ChatMessage;
 
-function renderSidebar() {
+async function renderSidebar() {
   const socket = new FakeSocket();
   let session: RoomSession | undefined;
   render(
     <AppStateProvider
       createSession={(dispatch) =>
-        (session = new RoomSession({ dispatch, createSocket: () => socket.asSocket() }))
+        (session = new RoomSession({
+          dispatch,
+          createSocket: () => socket.asSocket(),
+          createMedia: fakeMedia().createMedia,
+        }))
       }
     >
       <RoomSidebar />
     </AppStateProvider>,
   );
-  act(() => {
+  await act(async () => {
     session!.join('room1', alex.name);
+    await flushMicrotasks();
     socket.serverConnect();
     socket
       .lastEmitted('room:join')
@@ -58,8 +64,8 @@ afterEach(() => {
 });
 
 describe('RoomSidebar', () => {
-  it('renders «Чат» and «Участники (n/4)» tabs with the chat open by default', () => {
-    const { tab } = renderSidebar();
+  it('renders «Чат» and «Участники (n/4)» tabs with the chat open by default', async () => {
+    const { tab } = await renderSidebar();
 
     expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual([
       'Чат',
@@ -77,7 +83,7 @@ describe('RoomSidebar', () => {
   });
 
   it('switches to the participants tab on click and back', async () => {
-    const { tab, user } = renderSidebar();
+    const { tab, user } = await renderSidebar();
 
     await user.click(tab(/Участники/));
 
@@ -94,8 +100,8 @@ describe('RoomSidebar', () => {
     expect(screen.getByRole('log')).toBeInTheDocument();
   });
 
-  it('updates the participant counter in the tab label while the chat is open', () => {
-    const { socket, tab } = renderSidebar();
+  it('updates the participant counter in the tab label while the chat is open', async () => {
+    const { socket, tab } = await renderSidebar();
 
     act(() => socket.serverEmit('participant:left', { participantId: maria.id }));
 
@@ -103,7 +109,7 @@ describe('RoomSidebar', () => {
   });
 
   it('keeps the message draft when switching tabs', async () => {
-    const { tab, user } = renderSidebar();
+    const { tab, user } = await renderSidebar();
     await user.type(screen.getByRole('textbox', { name: 'Сообщение' }), 'черновик');
 
     await user.click(tab(/Участники/));
@@ -117,7 +123,7 @@ describe('RoomSidebar', () => {
     ['{ArrowLeft}', /Участники/],
     ['{End}', /Участники/],
   ])('%s moves focus and selection', async (key, expected) => {
-    const { tab, user } = renderSidebar();
+    const { tab, user } = await renderSidebar();
     await user.click(tab('Чат'));
 
     await user.keyboard(key);
@@ -131,7 +137,7 @@ describe('RoomSidebar', () => {
   });
 
   it('scrolls the chat to the bottom when it is opened after messages arrived in the background', async () => {
-    const { socket, tab, user } = renderSidebar();
+    const { socket, tab, user } = await renderSidebar();
     await user.click(tab(/Участники/));
     vi.spyOn(Element.prototype, 'scrollHeight', 'get').mockReturnValue(700);
     const setScrollTop = vi.spyOn(Element.prototype, 'scrollTop', 'set');

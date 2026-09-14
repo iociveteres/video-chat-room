@@ -192,6 +192,9 @@ export class MediaController {
   /** Синхронно освобождает устройства; операции, начатые до вызова, свой результат отбросят. */
   stopAll(): void {
     this.generation += 1;
+    // Новые операции не ждут прежние: пользователь может так и не ответить на запрос разрешения,
+    // и getUserMedia провисит вечно. Прежние операции доработают сами и отбросят результат.
+    this.chain = Promise.resolve();
     for (const kind of KINDS) {
       this.releaseTrack(kind);
       this.setStatus(kind, 'off');
@@ -199,7 +202,9 @@ export class MediaController {
   }
 
   private enqueue(op: () => Promise<void>): Promise<void> {
-    const run = this.chain.then(op);
+    // Операция, поставленная до stopAll(), но не успевшая начаться, не выполняется вовсе.
+    const generation = this.generation;
+    const run = this.chain.then(() => (generation === this.generation ? op() : undefined));
     // Ошибка одной операции не должна останавливать очередь.
     this.chain = run.catch((err: unknown) => {
       console.warn('MediaController operation failed', err);
@@ -220,12 +225,14 @@ export class MediaController {
   private async disableVideo(): Promise<void> {
     const track = this.tracks.video;
     if (!track) return this.setStatus('video', 'off');
+    const generation = this.generation;
     this.tracks.video = null;
     track.removeEventListener('ended', this.onTrackEnded);
     await this.emitTrackChange('video', null);
     this.previewStream.removeTrack(track);
     track.stop();
-    this.setStatus('video', 'off');
+    // После stopAll() статусом уже владеют новые операции.
+    if (generation === this.generation) this.setStatus('video', 'off');
   }
 
   private async enableTrack(kind: TrackKind): Promise<void> {

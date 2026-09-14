@@ -29,6 +29,8 @@ export type AppAction =
   | { type: 'LEFT_ROOM' }
   | { type: 'CHAT_MESSAGE_RECEIVED'; message: ChatMessage }
   | { type: 'CHAT_SEND_FAILED'; code: ChatSendFailure }
+  /** Тост из side effects (медиа): текст уже готов, фаза не важна. */
+  | { type: 'NOTICE_SHOWN'; text: string; tone: 'info' | 'error' }
   | { type: 'NOTICE_DISMISSED' }
   // этап 3
   | { type: 'LOCAL_MEDIA_STATUS_CHANGED'; kind: TrackKind; status: DeviceStatus }

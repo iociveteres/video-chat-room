@@ -215,6 +215,11 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, notice: { id: (state.notice?.id ?? 0) + 1, text, tone: 'error' } };
     }
 
+    case 'NOTICE_SHOWN': {
+      const { text, tone } = action;
+      return { ...state, notice: { id: (state.notice?.id ?? 0) + 1, text, tone } };
+    }
+
     case 'NOTICE_DISMISSED': {
       if (state.notice === null) return state;
       return { ...state, notice: null };

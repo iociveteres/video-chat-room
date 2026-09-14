@@ -310,6 +310,28 @@ describe('appReducer', () => {
     expect(JSON.parse(JSON.stringify(withMedia))).toEqual(withMedia);
   });
 
+  describe('NOTICE_SHOWN', () => {
+    it.each<[string, AppState]>([
+      ['idle', initialAppState],
+      ['joining', joining],
+      ['joined', joined],
+    ])('shows the notice in %s; a repeated text is a new notice', (_label, state) => {
+      const first = appReducer(state, {
+        type: 'NOTICE_SHOWN',
+        text: 'Камера занята',
+        tone: 'error',
+      });
+      const second = appReducer(first, {
+        type: 'NOTICE_SHOWN',
+        text: 'Камера занята',
+        tone: 'error',
+      });
+
+      expect(first.notice).toMatchObject({ text: 'Камера занята', tone: 'error' });
+      expect(second.notice?.id).toBe((first.notice?.id ?? 0) + 1);
+    });
+  });
+
   describe('join step on failures', () => {
     it.each<[string, AppAction]>([
       ['JOIN_FAILED', { type: 'JOIN_FAILED', reason: 'ROOM_FULL' }],

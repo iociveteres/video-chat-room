@@ -424,6 +424,72 @@ describe('MediaController.stopAll', () => {
     expect(t.preview.getTracks()).toEqual([t.tracks().video]);
     expect(t.liveTracks()).toHaveLength(2);
   });
+
+  it('does not make new operations wait for a getUserMedia that never answers', async () => {
+    const t = setup();
+    t.devices.deferNext();
+    void t.controller.acquireInitial(); // пользователь не отвечает на запрос разрешения
+    await vi.waitFor(() => {
+      expect(t.devices.pending).toHaveLength(1);
+    });
+
+    t.controller.stopAll();
+    await t.controller.setVideoEnabled(true);
+
+    expect(t.statuses).toEqual({ audio: 'off', video: 'on' });
+    expect(t.preview.getTracks()).toEqual([t.tracks().video]);
+
+    // Поздний ответ на первый запрос ничего не меняет и не держит устройства.
+    t.devices.pending[0]!.grant();
+    await vi.waitFor(() => {
+      expect(t.liveTracks()).toHaveLength(1);
+    });
+    expect(t.statuses).toEqual({ audio: 'off', video: 'on' });
+    expect(t.tracks().audio).toBeNull();
+  });
+
+  it('drops operations that were queued before stopAll and have not started', async () => {
+    const t = setup();
+    t.devices.deferNext();
+    const acquiring = t.controller.acquireInitial();
+    const enabling = t.controller.setVideoEnabled(true);
+    await vi.waitFor(() => {
+      expect(t.devices.pending).toHaveLength(1);
+    });
+
+    t.controller.stopAll();
+    t.devices.pending[0]!.grant();
+    await Promise.all([acquiring, enabling]);
+
+    expect(t.devices.getUserMedia).toHaveBeenCalledTimes(1);
+    expect(t.liveTracks()).toEqual([]);
+    expect(t.statuses).toEqual({ audio: 'off', video: 'off' });
+  });
+
+  it('a camera turned off right before stopAll does not overwrite later statuses', async () => {
+    const t = setup();
+    await t.controller.acquireInitial();
+    let release: () => void = () => {};
+    t.controller.onTrackChange(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const disabling = t.controller.setVideoEnabled(false);
+    await vi.waitFor(() => {
+      expect(t.controller.getTracks().video).toBeNull();
+    });
+
+    t.controller.stopAll();
+    await t.controller.acquireInitial();
+    // acquireInitial не вызывает trackChange, так что release относится к выключению.
+    release();
+    await disabling;
+
+    expect(t.statuses).toEqual({ audio: 'on', video: 'on' });
+    expect(t.liveTracks()).toHaveLength(2);
+  });
 });
 
 /** Controller после успешного захвата при входе. */
