@@ -92,6 +92,27 @@ export function rawSendChat(client: TestClient, payload: unknown): Promise<ChatS
   });
 }
 
+export function updateMedia(client: TestClient, media: MediaState): void {
+  client.emit('media:update', media);
+}
+
+/** media:update с произвольными аргументами — для заведомо невалидных payload. */
+export function rawUpdateMedia(client: TestClient, ...args: unknown[]): void {
+  (client as unknown as RawEmitter).emit('media:update', ...args);
+}
+
+export interface RecordedMedia {
+  participantId: string;
+  media: MediaState;
+}
+
+/** Записывает participant:media клиента в порядке получения. */
+export function recordMedia(client: TestClient): RecordedMedia[] {
+  const events: RecordedMedia[] = [];
+  client.on('participant:media', (e) => events.push(e));
+  return events;
+}
+
 /** Записывает chat:message клиента в порядке получения. */
 export function recordChat(client: TestClient): ChatMessage[] {
   const messages: ChatMessage[] = [];
