@@ -110,6 +110,10 @@ describe('installE2EHook', () => {
     vi.spyOn(peers.pcs.last, 'getStats').mockResolvedValue(new Map([[stat.id, stat]]));
     await expect(hook.peers.getStats(maria.id)).resolves.toEqual([stat]);
     await expect(hook.peers.getStats('nobody')).resolves.toBeNull();
+    expect(hook.debug.callConfig()).toMatchObject({
+      rtc: { bundlePolicy: 'max-bundle', iceTransportPolicy: 'all' },
+      connectTimeoutMs: 20_000,
+    });
   });
 
   it('stops counting signals after cleanup', async () => {

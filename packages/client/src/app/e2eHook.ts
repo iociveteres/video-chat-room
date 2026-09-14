@@ -1,3 +1,4 @@
+import { getPeerConnectTimeoutMs, getRtcConfiguration } from '../call/rtcConfig';
 import type { LocalTracks } from '../media/MediaController';
 import type { RoomSession } from '../session/RoomSession';
 
@@ -32,6 +33,8 @@ export interface VcrE2EHook {
   debug: {
     /** Отправленные сигналы по адресатам за жизнь вкладки: проверка «ровно один offer». */
     signalCounts(): SignalCounts;
+    /** Конфигурация звонка из env сборки: E2E убеждается, что проект запущен с нужным env. */
+    callConfig(): { rtc: RTCConfiguration; connectTimeoutMs: number };
   };
 }
 
@@ -92,6 +95,10 @@ export function installE2EHook(
     debug: {
       signalCounts: () =>
         Object.fromEntries(Object.entries(counts).map(([id, count]) => [id, { ...count }])),
+      callConfig: () => ({
+        rtc: getRtcConfiguration(),
+        connectTimeoutMs: getPeerConnectTimeoutMs(),
+      }),
     },
   };
   win.__vcr = hook;

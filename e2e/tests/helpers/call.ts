@@ -9,8 +9,23 @@ interface VcrPeersWindow {
     };
     debug: {
       signalCounts(): Record<string, { offer: number; answer: number; candidate: number }>;
+      callConfig(): { rtc: RTCConfiguration; connectTimeoutMs: number };
     };
   };
+}
+
+/** Конфигурация звонка, с которой собран клиент на этой вкладке. */
+export function callConfig(page: Page) {
+  return page.evaluate(() => (window as unknown as VcrPeersWindow).__vcr.debug.callConfig());
+}
+
+/** Статистика пира как есть: массив словарей RTCStats. */
+export async function peerStats(page: Page, peerId: string): Promise<Record<string, unknown>[]> {
+  const stats = await page.evaluate(
+    (id) => (window as unknown as VcrPeersWindow).__vcr.peers.getStats(id),
+    peerId,
+  );
+  return stats ?? [];
 }
 
 export interface InboundRtp {
@@ -42,11 +57,8 @@ export async function inboundRtp(
   peerId: string,
   kind: 'audio' | 'video',
 ): Promise<InboundRtp> {
-  const stats = await page.evaluate(
-    (id) => (window as unknown as VcrPeersWindow).__vcr.peers.getStats(id),
-    peerId,
-  );
-  const inbound = (stats ?? []).find((s) => s.type === 'inbound-rtp' && s.kind === kind);
+  const stats = await peerStats(page, peerId);
+  const inbound = stats.find((s) => s.type === 'inbound-rtp' && s.kind === kind);
   return {
     bytesReceived: Number(inbound?.bytesReceived ?? 0),
     framesDecoded: Number(inbound?.framesDecoded ?? 0),
@@ -108,5 +120,27 @@ export async function detachCamera(page: Page): Promise<void> {
 export function attachCamera(page: Page): Promise<void> {
   return page.evaluate(() => {
     (window as unknown as { __cameraAttached: boolean }).__cameraAttached = true;
+  });
+}
+
+/**
+ * Autoplay-политика без жеста пользователя: первый play() элемента со звуком отклоняется
+ * NotAllowedError, а сам элемент ставится на паузу — атрибут autoplay не запустит его в обход
+ * (pause() снимает флаг autoplaying). Беззвучный self-view политика пропускает.
+ */
+export async function blockFirstUnmutedPlay(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    // Вызывается через original.call(this) — привязка к элементу сохраняется.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const original = HTMLMediaElement.prototype.play;
+    let blocked = false;
+    HTMLMediaElement.prototype.play = function (this: HTMLMediaElement) {
+      if (!blocked && !this.muted) {
+        blocked = true;
+        this.pause();
+        return Promise.reject(new DOMException('play() without a user gesture', 'NotAllowedError'));
+      }
+      return original.call(this);
+    };
   });
 }

@@ -23,6 +23,9 @@ logger.error = (message, options) => {
 
 export default defineConfig({
   customLogger: logger,
+  // E2E поднимает несколько dev-серверов с разным env (сценарии ICE): у каждого свой кэш
+  // предсборки зависимостей, иначе они одновременно пишут в node_modules/.vite.
+  cacheDir: process.env.VCR_VITE_CACHE_DIR,
   // Самоподписанный сертификат: без HTTPS браузер не даст камеру и микрофон при доступе по LAN.
   plugins: [react(), ...(e2e ? [] : [basicSsl()])],
   server: {
