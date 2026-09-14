@@ -3,8 +3,11 @@ import http from 'node:http';
 import https from 'node:https';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
+import { CHAT_RATE_LIMIT } from '@vcr/shared';
 import express, { type ErrorRequestHandler, type Express } from 'express';
 import { Server } from 'socket.io';
+import { ChatService } from './chat/ChatService';
+import { TokenBucket } from './chat/TokenBucket';
 import { DEFAULT_PING_INTERVAL_MS, DEFAULT_PING_TIMEOUT_MS } from './config';
 import { createLogger, type Logger } from './logger';
 import { RoomRegistry } from './rooms/RoomRegistry';
@@ -24,6 +27,11 @@ export const CONTENT_SECURITY_POLICY = [
   "frame-ancestors 'none'",
 ].join('; ');
 
+export interface ChatRateLimit {
+  burst: number;
+  refillPerSecond: number;
+}
+
 export interface AppServerOptions {
   /** 0 — эфемерный порт (тесты). */
   port: number;
@@ -36,6 +44,8 @@ export interface AppServerOptions {
   pingTimeoutMs?: number;
   logger?: Logger;
   registry?: RoomRegistry;
+  /** Антифлуд чата на участника; по умолчанию CHAT_RATE_LIMIT. false отключает (только тесты). */
+  chatRateLimit?: ChatRateLimit | false;
 }
 
 export interface AppServerHandle {
@@ -49,6 +59,7 @@ export interface AppServerHandle {
 export function createAppServer(opts: AppServerOptions): AppServerHandle {
   const logger = opts.logger ?? createLogger('info');
   const registry = opts.registry ?? new RoomRegistry();
+  const chat = new ChatService({ registry });
   const app = createHttpApp({ registry, logger, clientDistDir: opts.clientDistDir });
 
   const httpServer = opts.tls
@@ -65,7 +76,13 @@ export function createAppServer(opts: AppServerOptions): AppServerHandle {
     maxHttpBufferSize: SOCKET_MAX_HTTP_BUFFER_SIZE,
     serveClient: false,
   });
-  registerSocketHandlers({ io, registry, logger });
+  registerSocketHandlers({
+    io,
+    registry,
+    chat,
+    logger,
+    createChatBucket: chatBucketFactory(opts.chatRateLimit ?? CHAT_RATE_LIMIT),
+  });
 
   return {
     httpServer,
@@ -82,6 +99,14 @@ export function createAppServer(opts: AppServerOptions): AppServerHandle {
     // io.close() отключает все сокеты и закрывает httpServer.
     close: () => io.close(),
   };
+}
+
+function chatBucketFactory(limit: ChatRateLimit | false): () => TokenBucket {
+  // Бесконечный бакет никогда не пустеет: Infinity - 1 === Infinity.
+  const opts = limit
+    ? { capacity: limit.burst, refillPerSecond: limit.refillPerSecond }
+    : { capacity: Infinity, refillPerSecond: 0 };
+  return () => new TokenBucket(opts);
 }
 
 function createHttpApp(deps: {

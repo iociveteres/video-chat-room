@@ -1,5 +1,7 @@
 import type {
   Ack,
+  ChatMessage,
+  ChatSendAck,
   ClientToServerEvents,
   JoinAck,
   ParticipantDTO,
@@ -62,6 +64,29 @@ export function rawJoin(client: TestClient, payload: unknown): Promise<JoinAck> 
   return new Promise((resolve) => {
     (client as unknown as RawEmitter).emit('room:join', payload, resolve);
   });
+}
+
+export function sendChat(client: TestClient, text: string): Promise<ChatSendAck> {
+  return new Promise((resolve) => {
+    client.emit('chat:send', { text }, resolve);
+  });
+}
+
+export function rawSendChat(client: TestClient, payload: unknown): Promise<ChatSendAck> {
+  return new Promise((resolve) => {
+    (client as unknown as RawEmitter).emit('chat:send', payload, resolve);
+  });
+}
+
+/** Записывает chat:message клиента в порядке получения. */
+export function recordChat(client: TestClient): ChatMessage[] {
+  const messages: ChatMessage[] = [];
+  client.on('chat:message', ({ message }) => messages.push(message));
+  return messages;
+}
+
+export function userMessages(messages: ChatMessage[]) {
+  return messages.filter((m) => m.kind === 'user');
 }
 
 export type RecordedEvent =
