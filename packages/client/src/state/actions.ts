@@ -1,4 +1,5 @@
 import type { ChatMessage, MediaState, ParticipantDTO } from '@vcr/shared';
+import type { PeerStatus } from '../call/PeerSession';
 import type { DeviceStatus, TrackKind } from '../media/MediaController';
 
 /** Причины неудачного входа, которые показываются пользователю. */
@@ -36,4 +37,10 @@ export type AppAction =
   | { type: 'LOCAL_MEDIA_STATUS_CHANGED'; kind: TrackKind; status: DeviceStatus }
   /** Сменился объект видеотрека в previewStream — self-view перепривязывает srcObject. */
   | { type: 'LOCAL_VIDEO_TRACK_CHANGED' }
-  | { type: 'PARTICIPANT_MEDIA_CHANGED'; participantId: string; media: MediaState };
+  | { type: 'PARTICIPANT_MEDIA_CHANGED'; participantId: string; media: MediaState }
+  // этап 4
+  /** Статус медиасоединения с удалённым участником (PeerManager). */
+  | { type: 'PEER_STATUS_CHANGED'; participantId: string; status: PeerStatus }
+  /** play() удалённого видео отклонён autoplay-политикой (FR-37). */
+  | { type: 'AUTOPLAY_BLOCKED' }
+  | { type: 'AUTOPLAY_RESUMED' };

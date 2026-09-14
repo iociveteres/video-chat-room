@@ -7,6 +7,8 @@ import {
   type ServerErrorCode,
 } from '@vcr/shared';
 import type { Dispatch } from 'react';
+import { PeerManager, type PeerManagerDeps } from '../call/PeerManager';
+import { getPeerConnectTimeoutMs, getRtcConfiguration } from '../call/rtcConfig';
 import { MediaController, type MediaControllerDeps } from '../media/MediaController';
 import { createSocket as defaultCreateSocket, type AppClientSocket } from '../net/createSocket';
 import type { AppAction, ChatSendFailure, JoinFailure } from '../state/actions';
@@ -22,6 +24,8 @@ export interface RoomSessionDeps {
   createSocket?: () => AppClientSocket;
   /** Подмена MediaController (тесты); по умолчанию — настоящие navigator.mediaDevices. */
   createMedia?: (callbacks: MediaCallbacks) => MediaController;
+  /** Подмена PeerManager (тесты: в jsdom нет RTCPeerConnection). */
+  createPeers?: (deps: PeerManagerDeps) => PeerManager;
 }
 
 type Status = 'idle' | 'joining' | 'joined';
@@ -91,9 +95,13 @@ export function mapChatSendError(code: ServerErrorCode): ChatSendFailure {
  *
  * Этап 3: владеет MediaController. Медиа захватывается до room:join, изменения mic/cam уходят
  * через media:update, а на любом пути выхода устройства освобождаются (TDD этапа 3 §4.4).
+ *
+ * Этап 4: владеет PeerManager. participant:* и signal маршрутизируются в него только в фазе
+ * joined; на любом пути выхода соединения закрываются раньше, чем гаснут устройства.
  */
 export class RoomSession {
   readonly media: MediaController;
+  readonly peers: PeerManager;
 
   private readonly dispatch: Dispatch<AppAction>;
   private readonly createSocket: () => AppClientSocket;
@@ -119,6 +127,17 @@ export class RoomSession {
     });
     this.media.onTrackChange((kind) => {
       if (kind === 'video') this.dispatch({ type: 'LOCAL_VIDEO_TRACK_CHANGED' });
+    });
+    this.peers = (deps.createPeers ?? ((peerDeps) => new PeerManager(peerDeps)))({
+      media: this.media,
+      rtcConfig: getRtcConfiguration(),
+      connectTimeoutMs: getPeerConnectTimeoutMs(),
+      sendSignal: (to, data) => {
+        if (this.status === 'joined') this.socket?.emit('signal', { to, data });
+      },
+      onPeerStatus: (participantId, status) =>
+        this.dispatch({ type: 'PEER_STATUS_CHANGED', participantId, status }),
+      onNotice: (text) => this.dispatch({ type: 'NOTICE_SHOWN', text, tone: 'error' }),
     });
   }
 
@@ -249,11 +268,28 @@ export class RoomSession {
     const isCurrent = () => this.socket === socket;
 
     // Все слушатели — до connect(), чтобы не пропустить ни одного события.
+    // Медиасоединения — только в joined: «хвосты» после выхода не должны создавать сессии.
+    const isJoined = () => isCurrent() && this.status === 'joined';
     socket.on('participant:joined', ({ participant }) => {
-      if (isCurrent()) this.dispatch({ type: 'PARTICIPANT_JOINED', participant });
+      if (!isCurrent()) return;
+      this.dispatch({ type: 'PARTICIPANT_JOINED', participant });
+      if (!isJoined()) return;
+      // Новичок вошёл позже — я offerer (I1). connecting до создания сессии: если PC не
+      // создастся, failed из PeerManager придёт следом и победит.
+      this.dispatch({
+        type: 'PEER_STATUS_CHANGED',
+        participantId: participant.id,
+        status: 'connecting',
+      });
+      this.peers.handleParticipantJoined(participant.id);
     });
     socket.on('participant:left', ({ participantId }) => {
-      if (isCurrent()) this.dispatch({ type: 'PARTICIPANT_LEFT', participantId });
+      if (!isCurrent()) return;
+      if (isJoined()) this.peers.handleParticipantLeft(participantId);
+      this.dispatch({ type: 'PARTICIPANT_LEFT', participantId });
+    });
+    socket.on('signal', ({ from, data }) => {
+      if (isJoined()) this.peers.handleSignal(from, data);
     });
     socket.on('participant:media', ({ participantId, media }) => {
       if (isCurrent()) this.dispatch({ type: 'PARTICIPANT_MEDIA_CHANGED', participantId, media });
@@ -308,6 +344,15 @@ export class RoomSession {
           participants: res.participants,
           messages: res.messages,
         });
+        // Старожилы пришлют offer сами (I1); answerer-сессии создаются лениво, по offer.
+        for (const participant of res.participants) {
+          if (participant.id === res.self.id) continue;
+          this.dispatch({
+            type: 'PEER_STATUS_CHANGED',
+            participantId: participant.id,
+            status: 'connecting',
+          });
+        }
         // Статус мог измениться между room:join и ack (например, устройство пропало).
         this.publishMediaState(this.media.getPublicState());
       });
@@ -320,7 +365,8 @@ export class RoomSession {
 
   /**
    * Отвязывает текущий сокет до disconnect(), чтобы его события уже не считались текущими,
-   * и освобождает устройства: лампочка камеры гаснет на любом пути выхода.
+   * закрывает медиасоединения и освобождает устройства: лампочка камеры гаснет на любом пути
+   * выхода. Соединения — раньше устройств, чтобы stopAll() не ждал replaceTrack закрытых пар.
    */
   private teardown({ disconnect = true } = {}): void {
     clearTimeout(this.connectTimer);
@@ -330,6 +376,7 @@ export class RoomSession {
     this.pendingJoin = null;
     this.lastSentMedia = null;
     if (disconnect) socket?.disconnect();
+    this.peers.closeAll();
     this.media.stopAll();
   }
 }

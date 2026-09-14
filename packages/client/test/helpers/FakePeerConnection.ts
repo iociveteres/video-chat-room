@@ -1,5 +1,7 @@
+import { PeerManager, type PeerManagerDeps } from '../../src/call/PeerManager';
+import { PeerSession } from '../../src/call/PeerSession';
 import type { TrackKind } from '../../src/media/MediaController';
-import { domError, FakeTrack } from './FakeMedia';
+import { domError, FakeMediaStream, FakeTrack } from './FakeMedia';
 
 /** Асинхронные методы, результат которых тест может придержать (TDD этапа 4 §11.1). */
 export type DeferrableMethod =
@@ -370,4 +372,31 @@ export function fakeOfferSdp(kinds: TrackKind[] = ['audio', 'video']): string {
   const lines = ['v=0', 's=fake-offer'];
   for (const kind of kinds) lines.push(`m=${kind} 9 UDP/TLS/RTP/SAVPF 0`, 'a=sendrecv');
   return `${lines.join('\r\n')}\r\n`;
+}
+
+/**
+ * Фабрика PeerManager для RoomSession: настоящие PeerManager и PeerSession поверх фейковых
+ * RTCPeerConnection и MediaStream (в jsdom их нет).
+ */
+export function fakePeers() {
+  const pcs = fakePeerConnections();
+  let manager: PeerManager | undefined;
+  const createPeers = (deps: PeerManagerDeps) =>
+    (manager = new PeerManager({
+      ...deps,
+      createSession: (sessionDeps) =>
+        new PeerSession({
+          ...sessionDeps,
+          createPeerConnection: pcs.create,
+          createStream: () => new FakeMediaStream() as unknown as MediaStream,
+        }),
+    }));
+  return {
+    pcs,
+    createPeers,
+    get manager(): PeerManager {
+      if (!manager) throw new Error('PeerManager was not created');
+      return manager;
+    },
+  };
 }
