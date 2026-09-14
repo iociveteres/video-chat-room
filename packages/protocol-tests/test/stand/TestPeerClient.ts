@@ -30,6 +30,11 @@ export class TestPeerClient {
   readonly sessions: FakePeerSession[] = [];
   /** Коды отказов room:join в порядке получения. */
   readonly joinErrors: ServerErrorCode[] = [];
+  /** Учёт попыток входа: каждая заканчивается успехом, отказом или прерыванием. */
+  joinAttempts = 0;
+  joinsSucceeded = 0;
+  /** Вход прерван до ack: leave/disconnect во время joining. */
+  joinsAborted = 0;
 
   private readonly url: string;
   private readonly roomId: string;
@@ -47,7 +52,9 @@ export class TestPeerClient {
       onPeerStatus: () => {},
       onNotice: () => {},
       createSession: (deps) => {
-        const session = new FakePeerSession(deps);
+        // Сессии создаются только из событий в фазе joined, когда id уже известен.
+        if (!this.participantId) throw new Error('Session created outside the room');
+        const session = new FakePeerSession(deps, this.participantId);
         this.sessions.push(session);
         return session.asPeerSession();
       },
@@ -64,6 +71,7 @@ export class TestPeerClient {
   join(name = `Участник ${this.index + 1}`): void {
     if (this.status !== 'idle') return;
     this.status = 'joining';
+    this.joinAttempts++;
 
     const socket: ClientSocket = io(this.url, {
       transports: ['websocket'],
@@ -97,10 +105,12 @@ export class TestPeerClient {
         if (!isCurrent() || this.status !== 'joining') return;
         if (!res.ok) {
           this.joinErrors.push(res.error.code);
+          this.status = 'idle';
           this.teardown();
           return;
         }
         this.status = 'joined';
+        this.joinsSucceeded++;
         this.participantId = res.self.id;
         // Старожилы пришлют offer сами (I1): answerer-сессии создаются лениво.
       });
@@ -130,6 +140,7 @@ export class TestPeerClient {
   }
 
   private teardown({ disconnect = true } = {}): void {
+    if (this.status === 'joining') this.joinsAborted++;
     const socket = this.socket;
     this.socket = null;
     this.status = 'idle';

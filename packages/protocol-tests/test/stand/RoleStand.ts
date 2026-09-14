@@ -20,14 +20,24 @@ export interface ServerLogLine {
   line: string;
 }
 
-/** Запоминает joinSeq каждого вошедшего: после выхода registry его уже не отдаёт. */
+/**
+ * Запоминает joinSeq каждого вошедшего (после выхода registry его уже не отдаёт), наибольший
+ * размер комнаты и её размер в момент каждого отказа ROOM_FULL.
+ */
 class RecordingRegistry extends RoomRegistry {
   readonly joinSeqs = new Map<string, number>();
+  maxRoomSize = 0;
+  readonly roomSizesOnReject: number[] = [];
 
   // Остаётся синхронным, как и родитель: на этом держится атомарность лимита.
   override join(...args: Parameters<RoomRegistry['join']>): JoinResult {
     const result = super.join(...args);
-    if (result.ok) this.joinSeqs.set(result.participant.id, result.participant.joinSeq);
+    if (result.ok) {
+      this.joinSeqs.set(result.participant.id, result.participant.joinSeq);
+      this.maxRoomSize = Math.max(this.maxRoomSize, result.room.participants.size);
+    } else {
+      this.roomSizesOnReject.push(this.getRoom(args[0])?.participants.size ?? 0);
+    }
     return result;
   }
 }
@@ -110,6 +120,16 @@ export class RoleStand {
   /** Живые участники комнаты по данным сервера, в порядке входа. */
   liveParticipantIds(): string[] {
     return this.registry.listParticipants(STAND_ROOM_ID).map((p) => p.id);
+  }
+
+  /** Наибольшее число участников комнаты за всё время стенда. */
+  get maxRoomSize(): number {
+    return this.registry.maxRoomSize;
+  }
+
+  /** Размер комнаты в момент каждого отказа ROOM_FULL. */
+  get roomSizesOnReject(): readonly number[] {
+    return this.registry.roomSizesOnReject;
   }
 
   joinSeq(participantId: string): number {

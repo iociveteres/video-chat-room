@@ -12,6 +12,8 @@ export type DescriptionType = 'offer' | 'answer';
  * answer. Кандидаты не генерирует: для I1 важны только описания.
  */
 export class FakePeerSession {
+  /** participantId своей стороны на момент создания сессии. */
+  readonly localId: string;
   readonly remoteId: string;
   readonly role: PeerSessionDeps['role'];
   /** В Node нет MediaStream; стенд потоки не читает. */
@@ -22,8 +24,9 @@ export class FakePeerSession {
 
   private readonly deps: PeerSessionDeps;
 
-  constructor(deps: PeerSessionDeps) {
+  constructor(deps: PeerSessionDeps, localId: string) {
     this.deps = deps;
+    this.localId = localId;
     this.remoteId = deps.remoteId;
     this.role = deps.role;
   }
