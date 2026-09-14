@@ -2,16 +2,20 @@ import { useAppState, useRoomSession } from '../../state/AppStateProvider';
 import { MessageInput } from './MessageInput';
 import { MessageList } from './MessageList';
 
-/** Боковая панель чата: лента сообщений и поле ввода. */
-export function ChatPanel() {
+export interface ChatPanelProps {
+  /** Вкладка чата видна; скрытая лента не прокручивается, при открытии — прокрутка вниз. */
+  active?: boolean;
+}
+
+/** Содержимое вкладки «Чат»: лента сообщений и поле ввода. */
+export function ChatPanel({ active = true }: ChatPanelProps) {
   const { chat, selfId } = useAppState();
   const session = useRoomSession();
 
   return (
-    <section className="chat" aria-labelledby="chat-title">
-      <h2 id="chat-title">Чат</h2>
-      <MessageList messages={chat.messages} selfId={selfId} />
+    <div className="chat">
+      <MessageList messages={chat.messages} selfId={selfId} active={active} />
       <MessageInput onSend={(text) => session.sendChatMessage(text)} />
-    </section>
+    </div>
   );
 }

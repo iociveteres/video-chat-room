@@ -10,10 +10,9 @@ const participants: ParticipantDTO[] = [
 ];
 
 describe('ParticipantList', () => {
-  it('renders names in the given order with a counter', () => {
+  it('renders names in the given order', () => {
     render(<ParticipantList participants={participants} selfId={null} />);
 
-    expect(screen.getByRole('heading', { name: 'Участники (3/4)' })).toBeInTheDocument();
     const items = within(screen.getByRole('list')).getAllByRole('listitem');
     expect(items.map((li) => li.textContent)).toEqual(['Мария', 'Алекс', 'Алекс']);
   });

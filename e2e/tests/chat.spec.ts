@@ -24,6 +24,41 @@ async function sendMessage(page: Page, text: string): Promise<void> {
   await expect(messageItem(page, text).last()).toBeVisible();
 }
 
+test('the full-height sidebar switches between «Чат» and «Участники» tabs', async ({ browser }) => {
+  const a = await newParticipant(browser);
+  const b = await newParticipant(browser);
+  const url = await createRoom(a.page, 'Алекс');
+  await joinByLink(b.page, url, 'Борис');
+  const chatTab = a.page.getByRole('tab', { name: 'Чат' });
+  const participantsTab = a.page.getByRole('tab', { name: 'Участники (2/4)' });
+
+  await expect(chatTab).toHaveAttribute('aria-selected', 'true');
+  await expect(chatLog(a.page)).toBeVisible();
+  await messageInput(a.page).fill('черновик');
+
+  // Панель занимает всю высоту окна.
+  const sidebar = await a.page.getByRole('complementary').boundingBox();
+  const viewport = a.page.viewportSize()!;
+  expect(sidebar).toMatchObject({ y: 0, height: viewport.height });
+
+  // Нижние границы шапки комнаты и полосы вкладок — на одной высоте.
+  const header = await a.page.getByRole('banner').boundingBox();
+  const tablist = await a.page.getByRole('tablist').boundingBox();
+  expect(header!.y + header!.height).toBe(tablist!.y + tablist!.height);
+  await expect(chatTab).toHaveCSS('box-shadow', /0px -7px 0px 0px inset/);
+
+  await participantsTab.click();
+  const participants = a.page.getByRole('tabpanel', { name: /Участники/ });
+  await expect(participants.getByRole('listitem')).toHaveText(['Алекс (вы)', 'Борис']);
+  await expect(chatLog(a.page)).toBeHidden();
+
+  await chatTab.press('End');
+  await expect(participantsTab).toBeFocused();
+  await participantsTab.press('Home');
+  await expect(chatTab).toHaveAttribute('aria-selected', 'true');
+  await expect(messageInput(a.page)).toHaveValue('черновик');
+});
+
 test('A writes a message, B sees it with the author name and HH:MM time', async ({ browser }) => {
   const a = await newParticipant(browser);
   const b = await newParticipant(browser);

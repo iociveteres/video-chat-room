@@ -55,7 +55,6 @@ describe('ChatPanel', () => {
   it('renders an empty log before joining', () => {
     renderChat();
 
-    expect(screen.getByRole('heading', { name: 'Чат' })).toBeInTheDocument();
     expect(within(screen.getByRole('log')).queryAllByRole('listitem')).toEqual([]);
   });
 

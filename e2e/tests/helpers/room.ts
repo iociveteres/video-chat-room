@@ -22,8 +22,14 @@ export async function closeParticipants(): Promise<void> {
   await Promise.all(openContexts.splice(0).map((context) => context.close()));
 }
 
+/**
+ * Элементы списка участников. Список живёт во вкладке «Участники», которая по умолчанию скрыта
+ * (открыт чат), поэтому локатор включает скрытые элементы; toHaveText читает textContent.
+ */
 export function participantList(page: Page) {
-  return page.getByRole('region', { name: /Участники/ }).getByRole('listitem');
+  return page
+    .getByRole('tabpanel', { name: /Участники/, includeHidden: true })
+    .getByRole('listitem', { includeHidden: true });
 }
 
 /** Стартовый экран → «Создать комнату» → комната. Возвращает URL комнаты. */

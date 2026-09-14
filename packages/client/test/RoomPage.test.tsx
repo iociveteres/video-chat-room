@@ -84,6 +84,7 @@ describe('RoomPage', () => {
 
     expect(t.lastSocket().lastEmitted('room:join').args).toEqual([{ roomId: ROOM, name: 'Алекс' }]);
     expect(screen.getByRole('heading', { name: `Комната ${ROOM}` })).toBeInTheDocument();
+    await t.user.click(screen.getByRole('tab', { name: 'Участники (2/4)' }));
     const items = within(screen.getByRole('list')).getAllByRole('listitem');
     expect(items.map((li) => li.textContent)).toEqual(['Мария', 'Алекс (вы)']);
   });
@@ -96,9 +97,9 @@ describe('RoomPage', () => {
     act(() => t.lastSocket().serverEmit('participant:joined', { participant: boris }));
     act(() => t.lastSocket().serverEmit('participant:left', { participantId: maria.id }));
 
+    await t.user.click(screen.getByRole('tab', { name: 'Участники (2/4)' }));
     const items = within(screen.getByRole('list')).getAllByRole('listitem');
     expect(items.map((li) => li.textContent)).toEqual(['Алекс (вы)', 'Борис']);
-    expect(screen.getByRole('heading', { name: 'Участники (2/4)' })).toBeInTheDocument();
   });
 
   it('«Выйти» leaves the room and goes to the lobby', async () => {
@@ -162,15 +163,18 @@ describe('RoomPage', () => {
       participantName: alex.name,
     } satisfies ChatMessage;
 
-    it('shows the chat next to the participants with the history from the ack', async () => {
+    it('opens the sidebar on the «Чат» tab with the history from the ack', async () => {
       const t = renderRoom();
       await enterName(t.user);
 
       t.serverAcceptsJoin({ ok: true, self: alex, participants: [alex], messages: [joinedAlex] });
 
       const sidebar = screen.getByRole('complementary');
-      expect(within(sidebar).getByRole('region', { name: /Участники/ })).toBeInTheDocument();
-      const chat = within(sidebar).getByRole('region', { name: 'Чат' });
+      expect(within(sidebar).getByRole('tab', { name: 'Чат' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+      const chat = within(sidebar).getByRole('tabpanel', { name: 'Чат' });
       expect(within(chat).getByRole('log')).toHaveTextContent('Алекс присоединился09:00');
       expect(within(chat).getByRole('textbox', { name: 'Сообщение' })).toBeInTheDocument();
     });
