@@ -63,3 +63,12 @@ export const SIGNAL_RATE_LIMIT = { burst: 100, refillPerSecond: 50 } as const;
 
 /** Сколько клиент ждёт медиасоединения с пиром, прежде чем показать failed. */
 export const PEER_CONNECT_TIMEOUT_MS = 20_000;
+
+/**
+ * Потолок битрейта видео на отправителя: без него libwebrtc разгоняет 640×360 до ~1.7 Mbps,
+ * а в mesh клиент шлёт до 3 потоков (TDD этапа 5 §4.3, §9).
+ */
+export const MAX_VIDEO_BITRATE_BPS = 1_000_000;
+
+/** Период опроса getStats в DiagnosticsOverlay (TDD этапа 5 §4.4). */
+export const DIAGNOSTICS_INTERVAL_MS = 2_000;

@@ -1,4 +1,4 @@
-import type { IceCandidateDTO, SignalData } from '@vcr/shared';
+import { MAX_VIDEO_BITRATE_BPS, type IceCandidateDTO, type SignalData } from '@vcr/shared';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { PeerSession, toPeerStatus, type PeerRole, type PeerStatus } from '../src/call/PeerSession';
 import type { LocalTracks } from '../src/media/MediaController';
@@ -621,6 +621,90 @@ describe('PeerSession connection status', () => {
 
     expect(t.pc.oniceconnectionstatechange).toBeNull();
     expect(t.statuses).toEqual(['closed']);
+  });
+});
+
+describe('PeerSession video bitrate cap', () => {
+  const setParametersCalls = (t: { pc: { journal: string[] } }) =>
+    t.pc.journal.filter((entry) => entry.includes('setParameters'));
+
+  it('on the first connected sets maxBitrate on the video sender once, without renegotiation', async () => {
+    const t = await negotiatedOfferer();
+    const video = t.pc.getTransceivers().find((tx) => tx.kind === 'video')!;
+    const journalBefore = t.pc.journal.length;
+
+    t.pc.setIceConnectionState('connected');
+    await flushMicrotasks();
+    t.pc.setIceConnectionState('disconnected');
+    t.pc.setIceConnectionState('connected');
+    await flushMicrotasks();
+
+    expect(t.pc.journal.slice(journalBefore)).toEqual([
+      `video.setParameters(maxBitrate=${MAX_VIDEO_BITRATE_BPS})`,
+    ]);
+    expect(video.sender.parameters.encodings).toEqual([{ active: true, maxBitrate: 1_000_000 }]);
+    expect(t.signals.map((s) => s.type)).toEqual(['offer']);
+  });
+
+  it('answerer caps the video sender as well; the cap survives replaceTrack', async () => {
+    const t = setup('answerer');
+    t.session.handleSignal(offer());
+    await flushMicrotasks();
+
+    t.pc.setIceConnectionState('completed');
+    await flushMicrotasks();
+    await t.session.replaceTrack('video', null);
+
+    const video = t.pc.getTransceivers().find((tx) => tx.kind === 'video')!;
+    expect(setParametersCalls(t)).toEqual(['video.setParameters(maxBitrate=1000000)']);
+    expect(video.sender.parameters.encodings[0]!.maxBitrate).toBe(MAX_VIDEO_BITRATE_BPS);
+    expect(t.pc.journal.filter((entry) => entry.startsWith('create'))).toEqual(['createAnswer']);
+  });
+
+  it('empty encodings (Firefox) → a single encoding is created', async () => {
+    const t = await negotiatedOfferer();
+    const video = t.pc.getTransceivers().find((tx) => tx.kind === 'video')!;
+    video.sender.parameters.encodings = [];
+
+    t.pc.setIceConnectionState('connected');
+    await flushMicrotasks();
+
+    expect(video.sender.parameters.encodings).toEqual([{ maxBitrate: MAX_VIDEO_BITRATE_BPS }]);
+  });
+
+  it('setParameters rejects → warning, status unchanged, no retry', async () => {
+    const t = await negotiatedOfferer();
+    t.pc.hold('setParameters');
+
+    t.pc.setIceConnectionState('connected');
+    await flushMicrotasks();
+    t.pc.takePending('setParameters').reject(new DOMException('bad', 'InvalidModificationError'));
+    await flushMicrotasks();
+    t.pc.setIceConnectionState('checking');
+    t.pc.setIceConnectionState('connected');
+    await flushMicrotasks();
+
+    expect(t.statuses).toEqual(['connected', 'connecting', 'connected']);
+    expect(setParametersCalls(t)).toHaveLength(1);
+    expect(warn).toHaveBeenCalledWith(
+      'PeerSession setParameters failed',
+      'remote-1',
+      expect.any(DOMException),
+    );
+  });
+
+  it('a rejection after close() is not reported', async () => {
+    const t = await negotiatedOfferer();
+    t.pc.hold('setParameters');
+    t.pc.setIceConnectionState('connected');
+    await flushMicrotasks();
+
+    t.session.close();
+    t.pc.takePending('setParameters').reject();
+    await flushMicrotasks();
+
+    expect(warn).not.toHaveBeenCalled();
+    expect(t.statuses).toEqual(['connected', 'closed']);
   });
 });
 
