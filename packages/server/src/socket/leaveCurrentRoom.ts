@@ -14,8 +14,15 @@ export function leaveCurrentRoom(ctx: HandlerContext, socket: AppSocket, reason:
 
   if (!result) return;
   ctx.logger.info('Participant left', { roomId, participantId, reason });
-  // Из удалённой комнаты уведомлять некого.
+  // Из удалённой комнаты уведомлять некого: история удалена вместе с ней.
   if (!result.roomDeleted) {
+    // Одно и то же сообщение для room:leave и обрыва: сервер их не различает (FR-31).
+    const leftMessage = ctx.chat.appendSystemMessage(
+      roomId,
+      'participant-left',
+      result.participant,
+    );
     ctx.io.to(adapterRoom(roomId)).emit('participant:left', { participantId });
+    ctx.io.to(adapterRoom(roomId)).emit('chat:message', { message: leftMessage });
   }
 }
