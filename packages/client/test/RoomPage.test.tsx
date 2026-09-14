@@ -80,7 +80,7 @@ describe('RoomPage', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Подключаемся к комнате…');
     expect(t.sockets).toHaveLength(1);
 
-    t.serverAcceptsJoin({ ok: true, self: alex, participants: [maria, alex] });
+    t.serverAcceptsJoin({ ok: true, self: alex, participants: [maria, alex], messages: [] });
 
     expect(t.lastSocket().lastEmitted('room:join').args).toEqual([{ roomId: ROOM, name: 'Алекс' }]);
     expect(screen.getByRole('heading', { name: `Комната ${ROOM}` })).toBeInTheDocument();
@@ -91,7 +91,7 @@ describe('RoomPage', () => {
   it('updates the list in real time', async () => {
     const t = renderRoom();
     await enterName(t.user);
-    t.serverAcceptsJoin({ ok: true, self: alex, participants: [maria, alex] });
+    t.serverAcceptsJoin({ ok: true, self: alex, participants: [maria, alex], messages: [] });
 
     act(() => t.lastSocket().serverEmit('participant:joined', { participant: boris }));
     act(() => t.lastSocket().serverEmit('participant:left', { participantId: maria.id }));
@@ -104,7 +104,7 @@ describe('RoomPage', () => {
   it('«Выйти» leaves the room and goes to the lobby', async () => {
     const t = renderRoom();
     await enterName(t.user);
-    t.serverAcceptsJoin({ ok: true, self: alex, participants: [alex] });
+    t.serverAcceptsJoin({ ok: true, self: alex, participants: [alex], messages: [] });
 
     await t.user.click(screen.getByRole('button', { name: 'Выйти' }));
 
@@ -122,7 +122,7 @@ describe('RoomPage', () => {
     await t.user.click(screen.getByRole('button', { name: 'Повторить вход' }));
     expect(t.sockets).toHaveLength(2);
 
-    t.serverAcceptsJoin({ ok: true, self: alex, participants: [alex] });
+    t.serverAcceptsJoin({ ok: true, self: alex, participants: [alex], messages: [] });
     expect(screen.getByRole('button', { name: 'Выйти' })).toBeInTheDocument();
   });
 
@@ -140,7 +140,7 @@ describe('RoomPage', () => {
   it('connection loss → «Соединение с сервером прервано»; «Войти снова» reconnects', async () => {
     const t = renderRoom();
     await enterName(t.user);
-    t.serverAcceptsJoin({ ok: true, self: alex, participants: [alex] });
+    t.serverAcceptsJoin({ ok: true, self: alex, participants: [alex], messages: [] });
 
     act(() => t.lastSocket().serverDisconnect('transport close'));
     expect(

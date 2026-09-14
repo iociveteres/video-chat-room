@@ -17,6 +17,7 @@ const joined = reduce(joining, {
   type: 'JOIN_SUCCEEDED',
   self: alex,
   participants: [maria, alex],
+  messages: [],
 });
 
 describe('appReducer', () => {
@@ -29,6 +30,8 @@ describe('appReducer', () => {
         selfId: null,
         participantIds: [],
         participantsById: {},
+        chat: { messages: [], messageIds: {} },
+        notice: null,
       });
     });
   });
@@ -69,6 +72,8 @@ describe('appReducer', () => {
         selfId: alex.id,
         participantIds: [maria.id, alex.id],
         participantsById: { [maria.id]: maria, [alex.id]: alex },
+        chat: { messages: [], messageIds: {} },
+        notice: null,
       });
     });
 
@@ -77,6 +82,7 @@ describe('appReducer', () => {
         type: 'JOIN_SUCCEEDED',
         self: alex,
         participants: [maria],
+        messages: [],
       });
       expect(next.participantIds).toEqual([maria.id, alex.id]);
     });
@@ -86,6 +92,7 @@ describe('appReducer', () => {
         type: 'JOIN_SUCCEEDED',
         self: alex,
         participants: [maria, alex, maria],
+        messages: [],
       });
       expect(next.participantIds).toEqual([maria.id, alex.id]);
     });
@@ -96,7 +103,12 @@ describe('appReducer', () => {
       ['failed', reduce(joining, { type: 'JOIN_FAILED', reason: 'INTERNAL' })],
     ])('is ignored in %s (stale ack)', (_label, state) => {
       expect(
-        appReducer(state, { type: 'JOIN_SUCCEEDED', self: boris, participants: [boris] }),
+        appReducer(state, {
+          type: 'JOIN_SUCCEEDED',
+          self: boris,
+          participants: [boris],
+          messages: [],
+        }),
       ).toBe(state);
     });
   });
@@ -211,7 +223,7 @@ describe('appReducer', () => {
       const next = reduce(
         joining,
         { type: 'LEFT_ROOM' },
-        { type: 'JOIN_SUCCEEDED', self: alex, participants: [alex] },
+        { type: 'JOIN_SUCCEEDED', self: alex, participants: [alex], messages: [] },
       );
       expect(next.phase).toEqual({ kind: 'idle' });
       expect(next.participantIds).toEqual([]);
@@ -222,7 +234,7 @@ describe('appReducer', () => {
     const state = reduce(
       initialAppState,
       { type: 'JOIN_REQUESTED', roomId: 'room1', name: 'Алекс' },
-      { type: 'JOIN_SUCCEEDED', self: alex, participants: [alex] },
+      { type: 'JOIN_SUCCEEDED', self: alex, participants: [alex], messages: [] },
       { type: 'PARTICIPANT_JOINED', participant: maria },
       { type: 'PARTICIPANT_JOINED', participant: boris },
       { type: 'PARTICIPANT_LEFT', participantId: maria.id },

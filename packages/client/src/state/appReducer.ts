@@ -1,5 +1,5 @@
-import type { ParticipantDTO } from '@vcr/shared';
-import type { AppAction, JoinFailure } from './actions';
+import { CHAT_HISTORY_LIMIT, type ChatMessage, type ParticipantDTO } from '@vcr/shared';
+import type { AppAction, ChatSendFailure, JoinFailure } from './actions';
 
 export type SessionPhase =
   | { kind: 'idle' }
@@ -7,6 +7,21 @@ export type SessionPhase =
   | { kind: 'joined' }
   | { kind: 'failed'; reason: JoinFailure }
   | { kind: 'connection-lost' };
+
+export interface ChatState {
+  /** От старых к новым, ≤ CHAT_HISTORY_LIMIT. */
+  messages: ChatMessage[];
+  /** id сообщений из messages — для дедупликации (Record, а не Set: state сериализуем). */
+  messageIds: Record<string, true>;
+}
+
+/** Общий слот тостов: чат (этап 2), медиа и звонок (этапы 3–4). */
+export interface Notice {
+  /** Растёт с каждым новым тостом: повтор того же текста — новый тост. */
+  id: number;
+  text: string;
+  tone: 'info' | 'error';
+}
 
 /**
  * Сериализуемое состояние приложения. Сокеты и прочие side effects сюда не попадают —
@@ -21,7 +36,11 @@ export interface AppState {
   /** Порядок = joinedAt. */
   participantIds: string[];
   participantsById: Record<string, ParticipantDTO>;
+  chat: ChatState;
+  notice: Notice | null;
 }
+
+const emptyChat: ChatState = { messages: [], messageIds: {} };
 
 export const initialAppState: AppState = {
   displayName: null,
@@ -30,13 +49,41 @@ export const initialAppState: AppState = {
   selfId: null,
   participantIds: [],
   participantsById: {},
+  chat: emptyChat,
+  notice: null,
 };
 
-const noParticipants = {
+/** Всё, что относится к конкретному пребыванию в комнате. */
+const noRoomData = {
   selfId: null,
   participantIds: [],
   participantsById: {},
+  chat: emptyChat,
 } satisfies Partial<AppState>;
+
+/** Тексты тостов об ошибке отправки (TDD §6.4). NOT_IN_ROOM молча игнорируется. */
+export const CHAT_SEND_FAILURE_TEXT: Record<Exclude<ChatSendFailure, 'NOT_IN_ROOM'>, string> = {
+  INVALID_MESSAGE: 'Сообщение пустое или слишком длинное',
+  RATE_LIMITED: 'Слишком часто. Подождите секунду',
+  TIMEOUT: 'Не удалось отправить сообщение',
+  INTERNAL: 'Не удалось отправить сообщение',
+};
+
+/** Дедупликация по id и обрезка до последних CHAT_HISTORY_LIMIT сообщений. */
+function buildChat(messages: readonly ChatMessage[]): ChatState {
+  const unique: ChatMessage[] = [];
+  const seen = new Set<string>();
+  for (const message of messages) {
+    if (seen.has(message.id)) continue;
+    seen.add(message.id);
+    unique.push(message);
+  }
+  const kept = unique.slice(-CHAT_HISTORY_LIMIT);
+  return {
+    messages: kept,
+    messageIds: Object.fromEntries(kept.map((m) => [m.id, true] as const)),
+  };
+}
 
 /**
  * Чистый reducer сессии. Действие, недопустимое в текущей фазе (например, запоздавший ack
@@ -53,7 +100,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       if (state.phase.kind === 'joining' || state.phase.kind === 'joined') return state;
       return {
         ...state,
-        ...noParticipants,
+        ...noRoomData,
         displayName: action.name,
         roomId: action.roomId,
         phase: { kind: 'joining' },
@@ -74,13 +121,14 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         selfId: action.self.id,
         participantIds,
         participantsById,
+        chat: buildChat(action.messages),
       };
     }
 
     case 'JOIN_FAILED': {
       if (state.phase.kind !== 'joining') return state;
       // roomId и displayName сохраняются: «Повторить вход» не спрашивает их заново.
-      return { ...state, ...noParticipants, phase: { kind: 'failed', reason: action.reason } };
+      return { ...state, ...noRoomData, phase: { kind: 'failed', reason: action.reason } };
     }
 
     case 'PARTICIPANT_JOINED': {
@@ -108,12 +156,38 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'CONNECTION_LOST': {
       if (state.phase.kind !== 'joined') return state;
-      return { ...state, ...noParticipants, phase: { kind: 'connection-lost' } };
+      return { ...state, ...noRoomData, phase: { kind: 'connection-lost' } };
     }
 
     case 'LEFT_ROOM': {
       if (state.phase.kind === 'idle' && state.roomId === null) return state;
-      return { ...state, ...noParticipants, roomId: null, phase: { kind: 'idle' } };
+      return { ...state, ...noRoomData, roomId: null, phase: { kind: 'idle' } };
+    }
+
+    case 'CHAT_MESSAGE_RECEIVED': {
+      const { message } = action;
+      if (state.phase.kind !== 'joined' || message.id in state.chat.messageIds) return state;
+      if (state.chat.messages.length < CHAT_HISTORY_LIMIT) {
+        return {
+          ...state,
+          chat: {
+            messages: [...state.chat.messages, message],
+            messageIds: { ...state.chat.messageIds, [message.id]: true },
+          },
+        };
+      }
+      return { ...state, chat: buildChat([...state.chat.messages, message]) };
+    }
+
+    case 'CHAT_SEND_FAILED': {
+      if (state.phase.kind !== 'joined' || action.code === 'NOT_IN_ROOM') return state;
+      const text = CHAT_SEND_FAILURE_TEXT[action.code];
+      return { ...state, notice: { id: (state.notice?.id ?? 0) + 1, text, tone: 'error' } };
+    }
+
+    case 'NOTICE_DISMISSED': {
+      if (state.notice === null) return state;
+      return { ...state, notice: null };
     }
   }
 }

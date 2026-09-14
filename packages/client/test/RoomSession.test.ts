@@ -1,13 +1,14 @@
 import {
   ACK_TIMEOUT_MS,
   CONNECT_TIMEOUT_MS,
+  type ChatMessage,
   type ParticipantDTO,
   type ServerErrorCode,
 } from '@vcr/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { LEAVE_ACK_TIMEOUT_MS, RoomSession } from '../src/session/RoomSession';
+import { LEAVE_ACK_TIMEOUT_MS, mapChatSendError, RoomSession } from '../src/session/RoomSession';
 import { shouldLeaveOnNavigation } from '../src/session/navigation';
-import type { AppAction, JoinFailure } from '../src/state/actions';
+import type { AppAction, ChatSendFailure, JoinFailure } from '../src/state/actions';
 import { appReducer, initialAppState, type AppState } from '../src/state/appReducer';
 import { selectParticipants } from '../src/state/selectors';
 import { FakeSocket } from './helpers/FakeSocket';
@@ -15,6 +16,23 @@ import { FakeSocket } from './helpers/FakeSocket';
 const alex: ParticipantDTO = { id: 'p-alex', name: 'Алекс', joinedAt: 1_000 };
 const maria: ParticipantDTO = { id: 'p-maria', name: 'Мария', joinedAt: 2_000 };
 const boris: ParticipantDTO = { id: 'p-boris', name: 'Борис', joinedAt: 3_000 };
+
+const joinedMaria: ChatMessage = {
+  kind: 'system',
+  id: 'm-1',
+  ts: 2_000,
+  event: 'participant-joined',
+  participantId: maria.id,
+  participantName: maria.name,
+};
+const helloFromMaria: ChatMessage = {
+  kind: 'user',
+  id: 'm-2',
+  ts: 2_500,
+  authorId: maria.id,
+  authorName: maria.name,
+  text: 'Привет',
+};
 
 function setup() {
   const actions: AppAction[] = [];
@@ -39,11 +57,14 @@ function setup() {
   };
 
   /** Проводит вход до успешного ack. */
-  const joinSuccessfully = (participants: ParticipantDTO[] = [maria, alex]) => {
+  const joinSuccessfully = (
+    participants: ParticipantDTO[] = [maria, alex],
+    messages: ChatMessage[] = [],
+  ) => {
     session.join('room1', 'Алекс');
     const socket = lastSocket();
     socket.serverConnect();
-    socket.lastEmitted('room:join').respond({ ok: true, self: alex, participants });
+    socket.lastEmitted('room:join').respond({ ok: true, self: alex, participants, messages });
     return socket;
   };
 
@@ -82,12 +103,13 @@ describe('RoomSession.join', () => {
     const command = socket.lastEmitted('room:join');
     expect(command.args).toEqual([{ roomId: 'room1', name: 'Алекс' }]);
 
-    command.respond({ ok: true, self: alex, participants: [maria, alex] });
+    command.respond({ ok: true, self: alex, participants: [maria, alex], messages: [joinedMaria] });
 
     expect(t.actions.at(-1)).toEqual({
       type: 'JOIN_SUCCEEDED',
       self: alex,
       participants: [maria, alex],
+      messages: [joinedMaria],
     });
     expect(t.getState().phase).toEqual({ kind: 'joined' });
     expect(t.session.roomId).toBe('room1');
@@ -101,6 +123,7 @@ describe('RoomSession.join', () => {
       expect.arrayContaining([
         'participant:joined',
         'participant:left',
+        'chat:message',
         'connect_error',
         'disconnect',
         'connect',
@@ -129,7 +152,9 @@ describe('RoomSession.join', () => {
     socket.serverConnect();
 
     // Ack и participant:left пришли одной пачкой и обрабатываются синхронно друг за другом.
-    socket.lastEmitted('room:join').respond({ ok: true, self: alex, participants: [maria, alex] });
+    socket
+      .lastEmitted('room:join')
+      .respond({ ok: true, self: alex, participants: [maria, alex], messages: [] });
     socket.serverEmit('participant:left', { participantId: maria.id });
 
     expect(selectParticipants(t.getState())).toEqual([alex]);
@@ -230,7 +255,7 @@ describe('RoomSession.join', () => {
       vi.advanceTimersByTime(ACK_TIMEOUT_MS);
 
       expect(t.actions.at(-1)).toEqual({ type: 'JOIN_FAILED', reason: 'SERVER_UNAVAILABLE' });
-      command.respond({ ok: true, self: alex, participants: [alex] });
+      command.respond({ ok: true, self: alex, participants: [alex], messages: [] });
       expect(t.getState().phase).toEqual({ kind: 'failed', reason: 'SERVER_UNAVAILABLE' });
     });
 
@@ -399,6 +424,137 @@ describe('RoomSession.dispose', () => {
     // Session снова в idle; reducer всё ещё в joined, поэтому смотрим на сам сокет.
     t.session.join('room1', 'Алекс');
     expect(t.sockets).toHaveLength(2);
+  });
+});
+
+describe('RoomSession: chat', () => {
+  it('puts the history from the join ack into state', () => {
+    const t = setup();
+    t.joinSuccessfully([maria, alex], [joinedMaria, helloFromMaria]);
+
+    expect(t.getState().chat.messages).toEqual([joinedMaria, helloFromMaria]);
+  });
+
+  it('dispatches chat:message as CHAT_MESSAGE_RECEIVED', () => {
+    const t = setup();
+    const socket = t.joinSuccessfully();
+
+    socket.serverEmit('chat:message', { message: helloFromMaria });
+
+    expect(t.actions.at(-1)).toEqual({ type: 'CHAT_MESSAGE_RECEIVED', message: helloFromMaria });
+    expect(t.getState().chat.messages).toEqual([helloFromMaria]);
+  });
+
+  it('ignores chat:message of a stale socket', () => {
+    const t = setup();
+    const socket = t.joinSuccessfully();
+    t.session.leave();
+    const count = t.actions.length;
+
+    socket.serverEmit('chat:message', { message: helloFromMaria });
+
+    expect(t.actions).toHaveLength(count);
+  });
+
+  describe('sendChatMessage', () => {
+    it('emits chat:send and resolves true on ok without dispatching', async () => {
+      const t = setup();
+      const socket = t.joinSuccessfully();
+      const count = t.actions.length;
+
+      const result = t.session.sendChatMessage('Привет');
+      const command = socket.lastEmitted('chat:send');
+      expect(command.args).toEqual([{ text: 'Привет' }]);
+      command.respond({ ok: true, messageId: 'm-9' });
+
+      await expect(result).resolves.toBe(true);
+      expect(t.actions).toHaveLength(count);
+    });
+
+    it.each<[ServerErrorCode, string]>([
+      ['INVALID_MESSAGE', 'Сообщение пустое или слишком длинное'],
+      ['RATE_LIMITED', 'Слишком часто. Подождите секунду'],
+      ['INTERNAL', 'Не удалось отправить сообщение'],
+    ])('%s → resolves false and shows «%s»', async (code, text) => {
+      const t = setup();
+      const socket = t.joinSuccessfully();
+
+      const result = t.session.sendChatMessage('x');
+      socket.lastEmitted('chat:send').respond({ ok: false, error: { code } });
+
+      await expect(result).resolves.toBe(false);
+      expect(t.actions.at(-1)).toMatchObject({ type: 'CHAT_SEND_FAILED' });
+      expect(t.getState().notice).toMatchObject({ text, tone: 'error' });
+    });
+
+    it('NOT_IN_ROOM → resolves false silently', async () => {
+      const t = setup();
+      const socket = t.joinSuccessfully();
+
+      const result = t.session.sendChatMessage('x');
+      socket.lastEmitted('chat:send').respond({ ok: false, error: { code: 'NOT_IN_ROOM' } });
+
+      await expect(result).resolves.toBe(false);
+      expect(t.getState().notice).toBeNull();
+    });
+
+    it('ack timeout → CHAT_SEND_FAILED(TIMEOUT); a late ack is ignored', async () => {
+      const t = setup();
+      const socket = t.joinSuccessfully();
+
+      const result = t.session.sendChatMessage('x');
+      const command = socket.lastEmitted('chat:send');
+      vi.advanceTimersByTime(ACK_TIMEOUT_MS - 1);
+      expect(t.types()).not.toContain('CHAT_SEND_FAILED');
+      vi.advanceTimersByTime(1);
+
+      await expect(result).resolves.toBe(false);
+      expect(t.actions.at(-1)).toEqual({ type: 'CHAT_SEND_FAILED', code: 'TIMEOUT' });
+      expect(t.getState().notice).toMatchObject({ text: 'Не удалось отправить сообщение' });
+
+      const count = t.actions.length;
+      command.respond({ ok: true, messageId: 'late' });
+      expect(t.actions).toHaveLength(count);
+    });
+
+    it('resolves false without emitting when not joined', async () => {
+      const t = setup();
+      await expect(t.session.sendChatMessage('x')).resolves.toBe(false);
+
+      t.session.join('room1', 'Алекс');
+      t.lastSocket().serverConnect();
+      await expect(t.session.sendChatMessage('x')).resolves.toBe(false);
+      expect(t.lastSocket().emitted.map((c) => c.event)).toEqual(['room:join']);
+    });
+
+    it('does not show a notice for an ack that arrives after leaving', async () => {
+      const t = setup();
+      const socket = t.joinSuccessfully();
+      const result = t.session.sendChatMessage('x');
+      t.session.leave();
+      const count = t.actions.length;
+
+      vi.advanceTimersByTime(ACK_TIMEOUT_MS);
+
+      await expect(result).resolves.toBe(false);
+      expect(t.actions).toHaveLength(count);
+      expect(socket.lastEmitted('chat:send')).toBeDefined();
+    });
+  });
+
+  it.each<[ServerErrorCode, ChatSendFailure]>([
+    ['INVALID_MESSAGE', 'INVALID_MESSAGE'],
+    ['RATE_LIMITED', 'RATE_LIMITED'],
+    ['NOT_IN_ROOM', 'NOT_IN_ROOM'],
+    ['INTERNAL', 'INTERNAL'],
+    ['INVALID_PAYLOAD', 'INTERNAL'],
+    ['INVALID_NAME', 'INTERNAL'],
+    ['INVALID_ROOM_ID', 'INTERNAL'],
+    ['ALREADY_JOINED', 'INTERNAL'],
+    ['ROOM_FULL', 'INTERNAL'],
+  ])('mapChatSendError(%s) → %s', (code, failure) => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(mapChatSendError(code)).toBe(failure);
   });
 });
 
