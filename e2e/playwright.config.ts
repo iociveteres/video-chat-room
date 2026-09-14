@@ -5,6 +5,20 @@ const SERVER_PORT = 3100;
 const CLIENT_PORT = 5174;
 const CLIENT_URL = `http://127.0.0.1:${CLIENT_PORT}`;
 
+const firefoxProject = {
+  name: 'firefox',
+  grep: /@firefox/,
+  use: {
+    ...devices['Desktop Firefox'],
+    launchOptions: {
+      firefoxUserPrefs: {
+        'media.navigator.streams.fake': true,
+        'media.navigator.permission.disabled': true,
+      },
+    },
+  },
+};
+
 export default defineConfig({
   testDir: './tests',
   fullyParallel: false,
@@ -32,6 +46,9 @@ export default defineConfig({
         },
       },
     },
+    // Should (TDD этапа 3 §11.5): сценарии локального медиа с тегом @firefox во втором движке.
+    // Включается PW_FIREFOX=1; нужен `npx playwright install firefox`.
+    ...(process.env.PW_FIREFOX === '1' ? [firefoxProject] : []),
   ],
   webServer: [
     {
