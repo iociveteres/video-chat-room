@@ -10,7 +10,8 @@ export type DeferrableMethod =
   | 'setLocalDescription'
   | 'setRemoteDescription'
   | 'addIceCandidate'
-  | 'replaceTrack';
+  | 'replaceTrack'
+  | 'setParameters';
 
 /** Придержанный вызов: side effect метода применяется только в resolve(), как в браузере. */
 export interface PendingCall {
@@ -21,6 +22,15 @@ export interface PendingCall {
 }
 
 export class FakeRtpSender {
+  /** Как в Chromium: одна кодировка. Firefox до первой отправки — пустой массив. */
+  parameters: RTCRtpSendParameters = {
+    transactionId: 'tx-0',
+    encodings: [{ active: true }],
+    headerExtensions: [],
+    rtcp: {},
+    codecs: [],
+  };
+
   constructor(
     private readonly pc: FakePeerConnection,
     private readonly transceiver: FakeRtpTransceiver,
@@ -38,6 +48,23 @@ export class FakeRtpSender {
       `${kind}.replaceTrack(${trackLabel(track)})`,
       () => {
         this.track = track;
+      },
+    );
+  }
+
+  /** Копия, как в браузере: изменения применяются только через setParameters. */
+  getParameters(): RTCRtpSendParameters {
+    return structuredClone(this.parameters);
+  }
+
+  setParameters(parameters: RTCRtpSendParameters): Promise<void> {
+    const bitrates = parameters.encodings.map((e) => e.maxBitrate ?? '-').join(',');
+    return this.pc.invoke(
+      'setParameters',
+      [this.transceiver.kind, parameters],
+      `${this.transceiver.kind}.setParameters(maxBitrate=${bitrates})`,
+      () => {
+        this.parameters = structuredClone(parameters);
       },
     );
   }

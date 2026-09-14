@@ -1,15 +1,28 @@
 import { expect, type Page } from '@playwright/test';
 
-/** Форма этапа 4 в window.__vcr (packages/client/src/app/e2eHook.ts): e2e не импортирует типы клиента. */
-interface VcrPeersWindow {
+export interface PeerSummary {
+  participantId: string;
+  role: 'offerer' | 'answerer';
+  status: 'connecting' | 'connected' | 'unstable' | 'failed' | 'closed';
+}
+
+export type SignalCounts = Record<string, { offer: number; answer: number; candidate: number }>;
+
+/** Форма этапов 4–5 в window.__vcr (packages/client/src/app/e2eHook.ts): e2e не импортирует типы клиента. */
+export interface VcrPeersWindow {
   __vcr: {
     peers: {
       ids(): string[];
+      summary(): PeerSummary[];
       getStats(participantId: string): Promise<Record<string, unknown>[] | null>;
     };
     debug: {
-      signalCounts(): Record<string, { offer: number; answer: number; candidate: number }>;
-      callConfig(): { rtc: RTCConfiguration; connectTimeoutMs: number };
+      signalCounts(): SignalCounts;
+      callConfig(): {
+        rtc: RTCConfiguration;
+        connectTimeoutMs: number;
+        videoConstraints: Record<string, { ideal?: number; max?: number }>;
+      };
     };
   };
 }

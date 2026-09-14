@@ -33,6 +33,23 @@ const ICE_CLIENTS = [
   },
 ] as const;
 
+/**
+ * Комната из 4–5 участников (TDD этапа 5 §11.4): до 5 вкладок с fake-камерой на одной машине,
+ * поэтому захват понижен до 320×180@15. Свой dev-сервер: env сборки задаётся при старте Vite.
+ */
+const MESH_CLIENT = {
+  project: 'mesh',
+  spec: /mesh-\d+\.spec\.ts/,
+  port: 5177,
+  env: {
+    VITE_VIDEO_CONSTRAINTS: JSON.stringify({
+      width: { ideal: 320 },
+      height: { ideal: 180 },
+      frameRate: { ideal: 15, max: 15 },
+    }),
+  },
+} as const;
+
 const chromiumUse = {
   ...devices['Desktop Chrome'],
   // По умолчанию — Chromium из `npx playwright install chromium`.
@@ -98,8 +115,8 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      // Сценарии ICE требуют своего env сборки и идут в собственных проектах.
-      testIgnore: /[\\/]ice[\\/]/,
+      // Сценарии ICE и mesh требуют своего env сборки и идут в собственных проектах.
+      testIgnore: [/[\\/]ice[\\/]/, MESH_CLIENT.spec],
       use: chromiumUse,
     },
     ...ICE_CLIENTS.map(({ project, spec, port }) => ({
@@ -107,6 +124,14 @@ export default defineConfig({
       testMatch: spec,
       use: { ...chromiumUse, baseURL: `http://127.0.0.1:${port}` },
     })),
+    {
+      name: MESH_CLIENT.project,
+      testMatch: MESH_CLIENT.spec,
+      // 4–5 браузерных контекстов с медиа тяжёлые: по одному тесту и с запасом по времени.
+      workers: 1,
+      timeout: 120_000,
+      use: { ...chromiumUse, baseURL: `http://127.0.0.1:${MESH_CLIENT.port}` },
+    },
     // Should (TDD этапа 3 §11.5): сценарии локального медиа с тегом @firefox во втором движке.
     // Включается PW_FIREFOX=1; нужен `npx playwright install firefox`.
     ...(process.env.PW_FIREFOX === '1' ? [firefoxProject] : []),
@@ -121,7 +146,7 @@ export default defineConfig({
       timeout: 60_000,
     },
     clientServer(CLIENT_PORT),
-    ...ICE_CLIENTS.map(({ project, port, env }) =>
+    ...[...ICE_CLIENTS, MESH_CLIENT].map(({ project, port, env }) =>
       clientServer(port, env, `node_modules/.vite-e2e-${project}`),
     ),
   ],

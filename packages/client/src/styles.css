@@ -127,18 +127,50 @@ button:disabled {
 }
 
 .room__stage {
+  position: relative;
   flex: 1;
   min-height: 0;
 }
 
-/* Область видео. Этап 4 — плитки в flex-ряд с переносом; сетка 1–4 появится на этапе 5. */
-.video-stage {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 1rem;
+/*
+ * Видеосетка 1–4 плитки (TDD этапа 5 §4.1): --cols/--rows ставит VideoGrid. Ячейка всегда
+ * размером с четверть области, как при 3–4 участниках: одна плитка стоит по центру,
+ * две — рядом по центру, и при входе новых участников плитки не меняют размер.
+ */
+.video-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--cols), calc(50% - 0.25rem));
+  grid-template-rows: repeat(var(--rows), calc(50% - 0.25rem));
+  place-content: center;
+  gap: 0.5rem;
   height: 100%;
+  min-height: 0;
+}
+
+/* 3 плитки: две сверху, третья по центру снизу той же ширины. */
+.video-grid[data-last-row-centered='true'] > .video-grid__cell:last-child {
+  grid-column: 1 / -1;
+  justify-self: center;
+  width: calc(50% - 0.25rem);
+}
+
+.video-grid__cell {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* В сетке плитка заполняет ячейку; видео обрезается по object-fit: cover. */
+.video-grid .tile {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  aspect-ratio: auto;
+  box-sizing: border-box;
+}
+
+.video-grid__cell--self .tile {
+  border: 2px solid #2563eb;
 }
 
 .tile {

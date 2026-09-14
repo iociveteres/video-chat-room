@@ -1,0 +1,39 @@
+/* Подключается только вместе с DiagnosticsOverlay: в prod-сборку не попадает. */
+.diagnostics {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 2;
+  max-width: calc(100% - 1rem);
+  overflow-x: auto;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  background: rgb(0 0 0 / 75%);
+  color: #f9fafb;
+  font:
+    0.75rem / 1.4 ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+  /* Не мешает кликать по плиткам под оверлеем. */
+  pointer-events: none;
+}
+
+.diagnostics table {
+  border-collapse: collapse;
+  white-space: nowrap;
+}
+
+.diagnostics th,
+.diagnostics td {
+  padding: 0.125rem 0.5rem;
+  text-align: right;
+}
+
+.diagnostics th[scope='row'],
+.diagnostics thead th:first-child {
+  max-width: 8rem;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+}

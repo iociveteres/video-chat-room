@@ -195,6 +195,66 @@ describe('signal', () => {
     });
   });
 
+  describe('full mesh of 4 participants (TDD этапа 5 §6.4, §11.3)', () => {
+    const NAMES = ['Алекс', 'Борис', 'Вера', 'Глеб'];
+    /** SDP с именем отправителя: видно, что relay доставил именно его описание. */
+    const sdpOf = (type: 'offer' | 'answer', name: string) => `v=0\r\ns=${type}-${name}\r\n`;
+
+    it('each participant gets exactly 3 signal streams from the right senders: 6 offers, 6 answers', async () => {
+      await start();
+      const clients = await connectClients(t.url, NAMES.length);
+      const ids: string[] = [];
+      const received = clients.map(recordSignals);
+
+      // Клиенты ведут себя как PeerManager: на participant:joined — offer и кандидат (I1),
+      // на offer — answer и кандидат.
+      clients.forEach((client, i) => {
+        const name = NAMES[i]!;
+        client.on('participant:joined', ({ participant }) => {
+          sendSignal(client, participant.id, { type: 'offer', sdp: sdpOf('offer', name) });
+          sendSignal(client, participant.id, candidate(i));
+        });
+        client.on('signal', ({ from, data }) => {
+          if (data.type !== 'offer') return;
+          sendSignal(client, from, { type: 'answer', sdp: sdpOf('answer', name) });
+          sendSignal(client, from, candidate(i));
+        });
+      });
+
+      // 6.1: входят по очереди — каждый следующий получает offer от всех, кто уже в комнате.
+      for (const [i, client] of clients.entries()) {
+        ids.push((await joinOk(client, 'room1', NAMES[i])).self.id);
+      }
+      const total = () => received.reduce((sum, signals) => sum + signals.length, 0);
+      // 6 пар × (offer + answer) × (описание + кандидат).
+      await vi.waitFor(() => {
+        expect(total()).toBe(24);
+      });
+      await settle(...clients);
+
+      // 6.2: у каждого ровно 3 потока — от остальных участников; от вошедших раньше — offer,
+      // от вошедших позже — answer, в каждом потоке описание приходит раньше кандидата.
+      received.forEach((signals, me) => {
+        const senders = [...new Set(signals.map((s) => s.from))].sort();
+        expect(senders).toEqual(ids.filter((_, i) => i !== me).sort());
+
+        for (const [peer, peerId] of ids.entries()) {
+          if (peer === me) continue;
+          const type = peer < me ? 'offer' : 'answer';
+          expect(signals.filter((s) => s.from === peerId).map((s) => s.data)).toEqual([
+            { type, sdp: sdpOf(type, NAMES[peer]!) },
+            candidate(peer),
+          ]);
+        }
+      });
+
+      const all = received.flat().map((s) => s.data.type);
+      expect(all.filter((type) => type === 'offer')).toHaveLength(6);
+      expect(all.filter((type) => type === 'answer')).toHaveLength(6);
+      expect(lines.filter((line) => line.includes('Signal dropped'))).toEqual([]);
+    });
+  });
+
   // Границы и форма payload — в unit-тестах SignalSchema; здесь — что обработчик их применяет.
   describe('validation', () => {
     it.each<[string, (to: string) => unknown[]]>([

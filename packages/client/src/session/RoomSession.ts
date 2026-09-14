@@ -11,6 +11,7 @@ import type { Dispatch } from 'react';
 import { PeerManager, type PeerManagerDeps } from '../call/PeerManager';
 import { getPeerConnectTimeoutMs, getRtcConfiguration } from '../call/rtcConfig';
 import { MediaController, type MediaControllerDeps } from '../media/MediaController';
+import { getVideoConstraints } from '../media/videoConstraints';
 import { createSocket as defaultCreateSocket, type AppClientSocket } from '../net/createSocket';
 import type { AppAction, ChatSendFailure, JoinFailure } from '../state/actions';
 
@@ -36,6 +37,7 @@ const defaultCreateMedia = (callbacks: MediaCallbacks) =>
     // Наличие mediaDevices гарантирует гейт окружения (TDD этапа 1).
     mediaDevices: navigator.mediaDevices,
     permissions: 'permissions' in navigator ? navigator.permissions : undefined,
+    videoConstraints: getVideoConstraints(),
     ...callbacks,
   });
 

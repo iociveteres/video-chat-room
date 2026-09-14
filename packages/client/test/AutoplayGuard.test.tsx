@@ -8,7 +8,7 @@ import {
   AutoplayGuard,
   AutoplayRegistry,
 } from '../src/features/call/AutoplayGuard';
-import { VideoStage } from '../src/features/call/VideoStage';
+import { VideoGrid } from '../src/features/call/VideoGrid';
 import { RoomSession } from '../src/session/RoomSession';
 import { AppStateProvider } from '../src/state/AppStateProvider';
 import { domError, fakeMedia, flushMicrotasks } from './helpers/FakeMedia';
@@ -117,7 +117,7 @@ async function renderRoom() {
     >
       <AutoplayGuard>
         <AutoplayBanner />
-        <VideoStage />
+        <VideoGrid />
       </AutoplayGuard>
     </AppStateProvider>,
   );

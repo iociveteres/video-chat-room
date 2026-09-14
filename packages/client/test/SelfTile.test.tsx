@@ -1,7 +1,7 @@
 import type { ParticipantDTO } from '@vcr/shared';
 import { act, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { VideoStage } from '../src/features/call/VideoStage';
+import { VideoGrid } from '../src/features/call/VideoGrid';
 import { RoomSession } from '../src/session/RoomSession';
 import { AppStateProvider } from '../src/state/AppStateProvider';
 import { fakeMedia, FakeMediaDevices, flushMicrotasks } from './helpers/FakeMedia';
@@ -28,7 +28,7 @@ async function renderStage(devices = new FakeMediaDevices()) {
         }))
       }
     >
-      <VideoStage />
+      <VideoGrid />
     </AppStateProvider>,
   );
 

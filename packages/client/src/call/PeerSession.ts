@@ -1,4 +1,9 @@
-import { PEER_CONNECT_TIMEOUT_MS, type IceCandidateDTO, type SignalData } from '@vcr/shared';
+import {
+  MAX_VIDEO_BITRATE_BPS,
+  PEER_CONNECT_TIMEOUT_MS,
+  type IceCandidateDTO,
+  type SignalData,
+} from '@vcr/shared';
 import type { LocalTracks, TrackKind } from '../media/MediaController';
 
 export type PeerRole = 'offerer' | 'answerer';
@@ -65,6 +70,8 @@ export class PeerSession {
   private started = false;
   private closed = false;
   private status: PeerStatus | null = null;
+  /** Параметры отправки выставляются один раз — при первом connected. */
+  private sendParametersApplied = false;
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
 
   /**
@@ -260,6 +267,29 @@ export class PeerSession {
     // После connected или failed ICE таймаут больше не нужен: итог уже известен.
     if (status === 'connected' || status === 'failed') this.clearConnectTimeout();
     this.setStatus(status);
+    if (status === 'connected' && !this.sendParametersApplied) {
+      this.sendParametersApplied = true;
+      void this.applySendParameters();
+    }
+  }
+
+  /**
+   * Потолок битрейта видео (TDD этапа 5 §4.3). setParameters не вызывает ренеготиацию (I3),
+   * а параметры кодирования живут на отправителе и переживают replaceTrack. Ошибка не влияет
+   * на статус: соединение работает и без потолка.
+   */
+  private async applySendParameters(): Promise<void> {
+    const sender = this.videoTx?.sender;
+    if (!sender) return;
+    try {
+      const params = sender.getParameters();
+      // Firefox до первой отправки отдаёт пустой encodings.
+      if (params.encodings.length === 0) params.encodings = [{}];
+      params.encodings[0]!.maxBitrate = MAX_VIDEO_BITRATE_BPS;
+      await sender.setParameters(params);
+    } catch (err) {
+      if (!this.closed) console.warn('PeerSession setParameters failed', this.remoteId, err);
+    }
   }
 
   /**
