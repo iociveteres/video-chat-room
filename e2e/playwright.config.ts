@@ -26,6 +26,10 @@ export default defineConfig({
         // По умолчанию — Chromium из `npx playwright install chromium`.
         // PW_CHANNEL=chrome или msedge запускает установленный в системе браузер.
         channel: process.env.PW_CHANNEL,
+        launchOptions: {
+          // Фейковые камера и микрофон, запрос разрешения подтверждается автоматически.
+          args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
+        },
       },
     },
   ],
@@ -42,7 +46,8 @@ export default defineConfig({
       command: `npm -w @vcr/client run dev -- --port ${CLIENT_PORT}`,
       cwd: '..',
       url: CLIENT_URL,
-      env: { VCR_E2E: '1', VCR_SERVER_PORT: String(SERVER_PORT) },
+      // VITE_E2E=1 подключает тестовый хук window.__vcr (packages/client/src/app/e2eHook.ts).
+      env: { VCR_E2E: '1', VITE_E2E: '1', VCR_SERVER_PORT: String(SERVER_PORT) },
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
     },

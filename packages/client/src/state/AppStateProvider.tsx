@@ -7,6 +7,7 @@ import {
   type Dispatch,
   type ReactNode,
 } from 'react';
+import { installE2EHook } from '../app/e2eHook';
 import { shouldLeaveOnNavigation } from '../session/navigation';
 import { RoomSession } from '../session/RoomSession';
 import type { AppAction } from './actions';
@@ -34,6 +35,12 @@ export function AppStateProvider({
   // Одна сессия на всё время жизни провайдера, независимо от mount/unmount страниц.
   // dispatch из useReducer стабилен, поэтому ленивой инициализации достаточно.
   const [session] = useState(() => createSession(dispatch));
+
+  // Тестовый хук только в E2E-сборке: в prod условие статически ложно, и модуль вырезается.
+  useEffect(() => {
+    if (import.meta.env.VITE_E2E !== '1') return undefined;
+    return installE2EHook(session);
+  }, [session]);
 
   useEffect(() => {
     const onPopState = () => {
