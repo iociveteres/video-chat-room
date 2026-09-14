@@ -123,6 +123,18 @@ describe('FakePeerConnection', () => {
     ]);
   });
 
+  it('resolves a call held across close() without applying it', async () => {
+    const pc = new FakePeerConnection().hold('setRemoteDescription');
+    const srd = pc.setRemoteDescription({ type: 'offer', sdp: fakeOfferSdp() });
+
+    pc.close();
+    pc.takePending('setRemoteDescription').resolve();
+
+    await expect(srd).resolves.toBeUndefined();
+    expect(pc.remoteDescription).toBeNull();
+    expect(pc.getTransceivers()).toEqual([]);
+  });
+
   it('close() ends remote tracks, is idempotent and rejects further operations', async () => {
     const pc = new FakePeerConnection();
     const tx = pc.addTransceiver('video');

@@ -174,20 +174,32 @@ export class FakePeerConnection extends EventTarget {
   }
 
   createOffer(): Promise<RTCSessionDescriptionInit> {
-    return this.invoke('createOffer', [], 'createOffer', () => {
-      this.assertOpen();
-      return { type: 'offer', sdp: this.buildSdp('offer') };
-    });
+    return this.invoke(
+      'createOffer',
+      [],
+      'createOffer',
+      () => {
+        this.assertOpen();
+        return { type: 'offer', sdp: this.buildSdp('offer') };
+      },
+      () => ({ type: 'offer', sdp: '' }),
+    );
   }
 
   createAnswer(): Promise<RTCSessionDescriptionInit> {
-    return this.invoke('createAnswer', [], 'createAnswer', () => {
-      this.assertOpen();
-      if (this.signalingState !== 'have-remote-offer') {
-        throw domError('InvalidStateError');
-      }
-      return { type: 'answer', sdp: this.buildSdp('answer') };
-    });
+    return this.invoke(
+      'createAnswer',
+      [],
+      'createAnswer',
+      () => {
+        this.assertOpen();
+        if (this.signalingState !== 'have-remote-offer') {
+          throw domError('InvalidStateError');
+        }
+        return { type: 'answer', sdp: this.buildSdp('answer') };
+      },
+      () => ({ type: 'answer', sdp: '' }),
+    );
   }
 
   setLocalDescription(description: RTCSessionDescriptionInit): Promise<void> {
@@ -264,8 +276,19 @@ export class FakePeerConnection extends EventTarget {
     this.journal.push(entry);
   }
 
-  /** Общий путь асинхронных методов: журнал, затем сразу или через pending. */
-  invoke<T>(method: DeferrableMethod, args: unknown[], entry: string, effect: () => T): Promise<T> {
+  /**
+   * Общий путь асинхронных методов: журнал, затем сразу или через pending.
+   * Придержанный вызов, решённый после close(), резолвится без side effect значением
+   * closedResult. Браузер такой Promise не завершает вовсе; резолв — худший для кода случай:
+   * он проверяет, что после каждого await стоит проверка closed.
+   */
+  invoke<T>(
+    method: DeferrableMethod,
+    args: unknown[],
+    entry: string,
+    effect: () => T,
+    closedResult?: () => T,
+  ): Promise<T> {
     this.record(entry);
     // Исключение effect внутри executor превращается в reject, как у браузерных методов.
     if (!this.held.has(method)) return new Promise<T>((resolve) => resolve(effect()));
@@ -274,6 +297,10 @@ export class FakePeerConnection extends EventTarget {
         method,
         args,
         resolve: () => {
+          if (this.signalingState === 'closed') {
+            resolve(closedResult ? closedResult() : (undefined as T));
+            return;
+          }
           try {
             resolve(effect());
           } catch (error) {
