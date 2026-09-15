@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# Без BuildKit-only синтаксиса (RUN --mount): собирается и классическим docker build.
 
 # Сборка:  docker build -t video-chat-room .
 # Запуск:  docker run -p 3000:3000 video-chat-room
@@ -19,7 +19,7 @@ COPY packages/server/package.json packages/server/
 COPY packages/shared/package.json packages/shared/
 COPY packages/protocol-tests/package.json packages/protocol-tests/
 COPY e2e/package.json e2e/
-RUN --mount=type=cache,target=/root/.npm npm ci
+RUN npm ci
 
 COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
@@ -42,8 +42,7 @@ COPY packages/server/package.json packages/server/
 COPY packages/shared/package.json packages/shared/
 COPY packages/protocol-tests/package.json packages/protocol-tests/
 COPY e2e/package.json e2e/
-RUN --mount=type=cache,target=/root/.npm \
-    npm ci --omit=dev --ignore-scripts -w @vcr/server
+RUN npm ci --omit=dev --ignore-scripts -w @vcr/server
 
 # ---- runtime ----
 FROM node:${NODE_VERSION}-alpine AS runtime
