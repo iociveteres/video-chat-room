@@ -48,10 +48,10 @@ async function renderStage(devices = new FakeMediaDevices()) {
 }
 
 describe('SelfTile', () => {
-  it('shows the own preview stream, muted and mirrored, labelled «Вы»', async () => {
+  it('shows the own preview stream, muted and mirrored, labelled «Алекс (вы)»', async () => {
     const t = await renderStage();
 
-    expect(screen.getByRole('figure', { name: 'Вы' })).toBeInTheDocument();
+    expect(screen.getByRole('figure', { name: 'Алекс (вы)' })).toBeInTheDocument();
     expect(t.video().srcObject).toBe(t.session.media.previewStream);
     expect(t.video().muted).toBe(true);
     expect(t.video()).toHaveClass('tile__video--mirrored');

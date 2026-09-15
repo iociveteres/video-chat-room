@@ -48,7 +48,8 @@ export function deviceToggle(page: Page, name: 'Микрофон' | 'Камер�
 }
 
 export function selfTile(page: Page) {
-  return page.getByRole('figure', { name: 'Вы' });
+  // Подпись self-плитки — «Имя (вы)».
+  return page.getByRole('figure', { name: /\(вы\)$/ });
 }
 
 /** Ждёт, пока self-view начнёт показывать кадры fake-камеры. */

@@ -64,11 +64,11 @@ describe('VideoTile', () => {
   });
 
   it('uses label for the overlay and name for the placeholder', () => {
-    const t = renderTile({ label: 'Вы', showVideo: false });
+    const t = renderTile({ label: 'Алекс (вы)', showVideo: false });
 
-    expect(t.container.querySelector('.tile__name')).toHaveTextContent('Вы');
+    expect(t.container.querySelector('.tile__name')).toHaveTextContent('Алекс (вы)');
     expect(t.container.querySelector('.avatar-placeholder__name')).toHaveTextContent('Алекс');
-    expect(screen.getByRole('figure', { name: 'Вы' })).toBeInTheDocument();
+    expect(screen.getByRole('figure', { name: 'Алекс (вы)' })).toBeInTheDocument();
   });
 
   it('shows overlayLabel over the video only while the video is shown', () => {

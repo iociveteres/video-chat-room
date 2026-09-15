@@ -15,7 +15,7 @@ export function SelfTile() {
   return (
     <VideoTile
       name={name}
-      label="Вы"
+      label={name ? `${name} (вы)` : 'Вы'}
       stream={session.media.previewStream}
       streamVersion={localMedia.videoTrackVersion}
       showVideo={showVideo}

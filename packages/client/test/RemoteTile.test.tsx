@@ -100,7 +100,7 @@ describe('RemoteTile in VideoGrid', () => {
       within(stage)
         .getAllByRole('figure')
         .map((f) => f.getAttribute('aria-label')),
-    ).toEqual(['Вы', 'Мария', 'Борис']);
+    ).toEqual(['Алекс (вы)', 'Мария', 'Борис']);
     expect(t.video('Мария').muted).toBe(false);
     expect(t.video('Мария')).not.toHaveClass('tile__video--mirrored');
   });
@@ -143,7 +143,9 @@ describe('RemoteTile in VideoGrid', () => {
 
     expect(t.placeholder('Мария')).toHaveTextContent('Камера выключена');
     expect(within(t.tile('Мария')).getByRole('img', { name: 'Микрофон выключен' })).toBeVisible();
-    expect(within(t.tile('Вы')).queryByRole('img', { name: 'Микрофон выключен' })).toBeNull();
+    expect(
+      within(t.tile('Алекс (вы)')).queryByRole('img', { name: 'Микрофон выключен' }),
+    ).toBeNull();
   });
 
   it('unstable → «Связь нестабильна…» over the last video', async () => {

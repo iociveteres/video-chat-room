@@ -80,7 +80,7 @@ describe('VideoGrid', () => {
   it('one participant: 1×1 with only the self tile', async () => {
     const t = await renderGrid([alex]);
 
-    expect(t.labels()).toEqual(['Вы']);
+    expect(t.labels()).toEqual(['Алекс (вы)']);
     expect(t.grid()).toHaveAttribute('data-count', '1');
     expect(t.grid()).toHaveAttribute('data-last-row-centered', 'false');
     expect(t.grid().style.getPropertyValue('--cols')).toBe('1');
@@ -90,38 +90,38 @@ describe('VideoGrid', () => {
   it('self first, then remote participants in join order', async () => {
     const t = await renderGrid([alex, maria, boris]);
 
-    expect(t.labels()).toEqual(['Вы', 'Мария', 'Борис']);
+    expect(t.labels()).toEqual(['Алекс (вы)', 'Мария', 'Борис']);
     expect(t.grid()).toHaveAttribute('data-count', '3');
     expect(t.grid()).toHaveAttribute('data-last-row-centered', 'true');
     expect(t.grid().style.getPropertyValue('--cols')).toBe('2');
     expect(t.grid().style.getPropertyValue('--rows')).toBe('2');
-    // Self: подпись «Вы», зеркало и без звука; удалённые — наоборот.
+    // Self: подпись «Имя (вы)», зеркало и без звука; удалённые — наоборот.
     expect(t.grid().firstElementChild).toHaveClass('video-grid__cell--self');
-    expect(t.video('Вы').muted).toBe(true);
-    expect(t.video('Вы')).toHaveClass('tile__video--mirrored');
+    expect(t.video('Алекс (вы)').muted).toBe(true);
+    expect(t.video('Алекс (вы)')).toHaveClass('tile__video--mirrored');
     expect(t.video('Мария').muted).toBe(false);
   });
 
   it('a newcomer is appended to the end without moving existing tiles', async () => {
     const t = await renderGrid([maria, alex]);
-    const self = t.video('Вы');
+    const self = t.video('Алекс (вы)');
     const mariaVideo = t.video('Мария');
 
     await t.server('participant:joined', { participant: vera });
 
-    expect(t.labels()).toEqual(['Вы', 'Мария', 'Вера']);
-    expect(t.video('Вы')).toBe(self);
+    expect(t.labels()).toEqual(['Алекс (вы)', 'Мария', 'Вера']);
+    expect(t.video('Алекс (вы)')).toBe(self);
     expect(t.video('Мария')).toBe(mariaVideo);
   });
 
   it('someone in the middle leaves → the remaining <video> nodes are the same elements', async () => {
     const t = await renderGrid([alex, maria, boris, vera]);
     expect(t.grid()).toHaveAttribute('data-count', '4');
-    const before = { self: t.video('Вы'), maria: t.video('Мария'), vera: t.video('Вера') };
+    const before = { self: t.video('Алекс (вы)'), maria: t.video('Мария'), vera: t.video('Вера') };
 
     await t.server('participant:left', { participantId: boris.id });
 
-    expect(t.labels()).toEqual(['Вы', 'Мария', 'Вера']);
+    expect(t.labels()).toEqual(['Алекс (вы)', 'Мария', 'Вера']);
     expect(t.grid()).toHaveAttribute('data-count', '3');
     // E2E находит id участника по его плитке.
     expect(
@@ -129,18 +129,18 @@ describe('VideoGrid', () => {
         cell.getAttribute('data-participant-id'),
       ),
     ).toEqual([maria.id, vera.id]);
-    expect(t.video('Вы')).toBe(before.self);
+    expect(t.video('Алекс (вы)')).toBe(before.self);
     expect(t.video('Мария')).toBe(before.maria);
     expect(t.video('Вера')).toBe(before.vera);
   });
 
   it('everyone else left → back to 1×1, self tile kept', async () => {
     const t = await renderGrid([alex, maria]);
-    const self = t.video('Вы');
+    const self = t.video('Алекс (вы)');
 
     await t.server('participant:left', { participantId: maria.id });
 
     expect(t.grid()).toHaveAttribute('data-count', '1');
-    expect(t.video('Вы')).toBe(self);
+    expect(t.video('Алекс (вы)')).toBe(self);
   });
 });
