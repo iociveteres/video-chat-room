@@ -21,10 +21,10 @@ describe('formatSystemMessage', () => {
     });
   });
 
-  it('participant-left → «отключился»', () => {
+  it('participant-left → «покинул комнату»', () => {
     expect(formatSystemMessage(systemMessage('participant-left', 'Мария'))).toEqual({
       name: 'Мария',
-      action: 'отключился',
+      action: 'покинул комнату',
     });
   });
 

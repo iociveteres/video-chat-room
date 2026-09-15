@@ -233,7 +233,9 @@ describe('RoomPage', () => {
         'aria-pressed',
         'false',
       );
-      expect(screen.getByRole('figure', { name: 'Вы' })).toHaveTextContent('Камера выключена');
+      expect(screen.getByRole('figure', { name: 'Алекс (вы)' })).toHaveTextContent(
+        'Камера выключена',
+      );
       expect(mediaUpdates(t).at(-1)).toEqual({ audio: false, video: false });
     });
 

@@ -116,7 +116,7 @@ test('a late participant sees the history written before joining', async ({ brow
   ]);
 });
 
-test('system messages: C joins and closes the tab → A sees «присоединился» and «отключился»', async ({
+test('system messages: C joins and closes the tab → A sees «присоединился» and «покинул комнату»', async ({
   browser,
 }) => {
   const a = await newParticipant(browser);
@@ -130,7 +130,7 @@ test('system messages: C joins and closes the tab → A sees «присоеди�
 
   await c.page.close();
 
-  await expect(messageItem(a.page, 'Вера отключился')).toBeVisible();
+  await expect(messageItem(a.page, 'Вера покинул комнату')).toBeVisible();
 });
 
 test('auto-scrolls to the newest message', async ({ browser }) => {
