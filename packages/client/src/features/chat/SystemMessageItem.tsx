@@ -7,7 +7,7 @@ export interface SystemMessageItemProps {
   message: Extract<ChatMessage, { kind: 'system' }>;
 }
 
-/** «**Имя** присоединился» / «**Имя** отключился» — одинаково для себя и для других. */
+/** «**Имя** присоединился» / «**Имя** покинул комнату» — одинаково для себя и для других. */
 export const SystemMessageItem = memo(function SystemMessageItem({
   message,
 }: SystemMessageItemProps) {

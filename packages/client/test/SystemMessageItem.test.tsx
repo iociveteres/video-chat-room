@@ -25,7 +25,7 @@ function renderItem(event: SystemEvent, name: string) {
 describe('SystemMessageItem', () => {
   it.each<[SystemEvent, string]>([
     ['participant-joined', 'Алекс присоединился'],
-    ['participant-left', 'Алекс отключился'],
+    ['participant-left', 'Алекс покинул комнату'],
   ])('%s → «%s» with the name in <strong>', (event, expected) => {
     renderItem(event, 'Алекс');
 
